@@ -1,424 +1,630 @@
 --[[
     =====================================================
-    DUNGEON QUEST AUTO FARM V45 - REAPERX ULTIMATE COMBAT
+    AUTO FARM V35 - BOSS KITE (KHÔNG TELE)
     =====================================================
-    - Đầy đủ tính năng: Kiting mượt mà, né chiêu, không kẹt
-    - ĐÃ FIX 100% ĐÒN ĐÁNH VŨ KHÍ:
-      * Tầng 1: Kích hoạt RemoteEvent trong Accessory Weapon
-      * Tầng 2: Fire ReplicatedStorage.remotes.weaponUsed
-      * Tầng 3: Auto equip & Activate Tool fallback
-      * Tầng 4: Giả lập VirtualUser MouseButton1
-    - ĐÃ FIX 100% KỸ NĂNG Q & E:
-      * Fire localEvent + abilityUsed:FireServer(slot, tool)
-    - Giao diện ReaperX Dark Theme:
-      * Nút thu nhỏ [ — ] thành khối tròn nổi 🗡️ kéo thả
-      * Bộ chọn 11 Dungeon & độ khó [ ◀ ] [ ▶ ]
-      * Auto Replay / Auto Rejoin / Anti-AFK
-    - Tốc độ WalkSpeed = 20 (Chuẩn an toàn chống kick)
+    - BỎ hoàn toàn teleport dodge
+    - Boss xử lý GIỐNG QUÁI THƯỜNG:
+      * Kite ở khoảng cách an toàn
+      * Retreat khi gần
+      * Phát hiện attack/cast → lùi
+    - Chỉ khác: boss giữ xa hơn 1 chút (28 vs 24)
+    - BodyGyro xoay mặt target (V33)
+    - Speed = 20 | Q/E skill
     =====================================================
 ]]
+
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local PathfindingService = game:GetService("PathfindingService")
 local CollectionService = game:GetService("CollectionService")
-local TeleportService = game:GetService("TeleportService")
-local TweenService = game:GetService("TweenService")
-local VirtualUser = game:GetService("VirtualUser")
+
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+
 -- =====================================================
--- CONFIG V45
+-- CONFIG V35
 -- =====================================================
 local Config = {
     AutoFarm = true, AutoSkill = true, AutoStart = true, AutoAttack = true,
     AutoDodge = true, UsePathfinding = true, CustomWalkSpeed = true,
     AutoOpenChest = true, AutoClearRoom = true, AutoSelectDungeon = true,
-    FarmRange = 280, AttackRange = 28, MoveDelay = 0.02,
-    TargetSearchInterval = 0.05, AttackCooldown = 0.25,
+
+    FarmRange = 280, AttackRange = 25, MoveDelay = 0.02,
+    TargetSearchInterval = 0.05, AttackCooldown = 0.4,
+
     PathRecalcInterval = 0.5, PathTimeout = 3, StuckThreshold = 2.0,
+
     SkillPriority = {"q", "e", "q2", "e2"},
-    -- ==== LOOP & UTILITIES (V44) ====
-    AutoReplay = true,
-    AutoBackToLobby = false,
-    ReplayCount = 0,
-    Hardcore = false,
-    WhiteScreen = false,
-    LowQuality = false,
-    FPSLock = true,
-    StreamerMode = false,
-    AutoRejoin = true,
-    AntiAFK = true,
     SkillDelay = 0.08, UseLocalEvent = true,
+
     WalkSpeed = 20, WalkSpeedInCombat = 20, WalkSpeedOutCombat = 20,
+
     GyroPower = 30000, GyroDamping = 500,
+
     SelectedDungeon = "Desert Temple", SelectedDifficulty = "Easy",
     DebugMode = false, ShowPath = false,
+
     KeyToggle = Enum.KeyCode.F1, KeyFarm = Enum.KeyCode.F2,
     KeyDebugAll = Enum.KeyCode.F4, KeySkill = Enum.KeyCode.F6,
     KeyDodge = Enum.KeyCode.F8,
     KeyToggleKiting = Enum.KeyCode.F9, KeyAutoStart = Enum.KeyCode.F10,
     KeyToggleVisualize = Enum.KeyCode.F11, KeyDebug = Enum.KeyCode.F12,
-    EnableKiting = true, KiteDistance = 24, RetreatDistance = 14,
-    BossKiteDistance = 28, BossRetreatDistance = 18,
-    CircleSpeed = 1.8, CircleDirChange = 4.0, FaceTargetInCombat = true,
-    DetectAttack = true, PredictMovement = true,
+    KeySpeedUp = Enum.KeyCode.Equals, KeySpeedDown = Enum.KeyCode.Minus,
+    KeyPanic = Enum.KeyCode.RightShift,
+
+    PredictMovement = true, MultiTargetScan = true,
+    CacheInterval = 0.3, MaxScanDepth = 9,
+
+    EnableObstacleAvoid = true, RaycastDistance = 8, RaycastDistanceFar = 18,
+    JumpHeightThreshold = 6, StrafeDistance = 12,
+    WaypointHistorySize = 10, WaypointMinDistance = 4,
+    EnableAirControl = true, EnablePredictiveAvoid = true,
+    PredictiveLookAhead = 0.3, RaycastIgnoreList = {},
+
+    UsePathfindingService = true, UnstickCooldown = 1.0,
+    StuckDropTargetTime = 6.0, WaypointSkipDistance = 8,
+
+    -- ==== KITING (giống nhau cho boss và quái) ====
+    EnableKiting = true,
+    KiteDistance = 24,           -- quái thường
+    KiteDistanceBoss = 28,       -- boss: xa hơn 4 studs
+    KiteDistanceRanged = 32,     -- ranged: xa nhất
+    KiteDistanceMin = 14,        -- dưới mức này → retreat (cả boss và quái)
+    KiteDistanceMax = 46,        -- trên mức này → approach
+    RetreatExtra = 8,            -- lùi thêm khi enemy đang attack/cast
+    EnableCircleStrafe = true, CircleStrafeSpeed = 0.7,
+    RetreatSpeedMultiplier = 1.2,
+
+    -- ==== RETREAT KHI ENEMY ĐANG ATTACK ====
+    AttackRetreatExtra = 8,      -- studs lùi thêm khi enemy attack
+
+    RetreatSampleAngles = 24, RetreatMinWallDist = 6,
 }
+
 local State = {
-    Running = false, CurrentTarget = nil, TargetPosition = nil,
-    IsMoving = false, LastAttackTime = 0, LastSkillTime = 0,
-    LastTargetSearch = 0, LastPathCalc = 0, KillCount = 0,
-    DungeonClears = 0, StartTime = tick(), StuckTime = 0,
-    LastPosition = Vector3.zero, TotalAttempts = 0,
-    TotalFailures = 0, TotalSuccesses = 0, TotalFallbacks = 0,
-    TotalRecomputes = 0, WaypointSkipped = 0,
-    IsKiting = false, CurrentKiteAngle = 0, KiteDirection = 1,
-    LastDirChange = 0, TargetVelocity = Vector3.zero,
-    LastTargetPos = nil, LastTargetPosTime = 0,
-    IsFacingTarget = false, IsTargetAttacking = false,
-    AttackWarningTime = 0, IsBoss = false,
-}
-local DungeonConfig = {
-    Dungeons = {
-        "Desert Temple", "Winter Outpost", "Pirate Island",
-        "King's Castle", "The Underworld", "Samurai Palace",
-        "The Canals", "Ghastly Harbor", "Steampunk Sewers",
-        "Orbital Outpost", "Northern Lands",
-    },
-    Difficulties = {"Easy", "Medium", "Hard", "Insane", "Nightmare"},
-    LevelReqs = {
-        ["Desert Temple"] = 1, ["Winter Outpost"] = 20,
-        ["Pirate Island"] = 40, ["King's Castle"] = 65,
-        ["The Underworld"] = 90, ["Samurai Palace"] = 110,
-        ["The Canals"] = 130, ["Ghastly Harbor"] = 145,
-        ["Steampunk Sewers"] = 160, ["Orbital Outpost"] = 175,
-        ["Northern Lands"] = 190,
-    },
+    Running = false, KillCount = 0,
+    LastPos = Vector3.new(0,0,0), StuckTime = 0,
+    Waypoints = {}, LastJumpTime = 0, IsJumping = false,
+    CircleStrafeDir = 1, LastCircleFlip = 0,
 }
 _G.CurrentTarget = nil
-_G.IdealKiteDistance = Config.KiteDistance
--- =====================================================
--- AUTO REPLAY & TELEPORT (V44)
--- =====================================================
-local function collectDungeonData()
-    local t = {}
-    local dungeonName = workspace:FindFirstChild("dungeonName")
-    if dungeonName and dungeonName:IsA("StringValue") then t.dungeonName = dungeonName.Value end
-    local dungeonProgress = workspace:FindFirstChild("dungeonProgress")
-    if dungeonProgress and dungeonProgress:IsA("StringValue") then t.dungeonProgress = dungeonProgress.Value end
-    local dungeonStarted = workspace:FindFirstChild("dungeonStarted")
-    if dungeonStarted and dungeonStarted:IsA("BoolValue") then t.dungeonStarted = dungeonStarted.Value end
-    local hardcore = workspace:FindFirstChild("hardcore")
-    if hardcore and hardcore:IsA("BoolValue") then t.hardcore = hardcore.Value; t.isHardcore = hardcore.Value end
-    local dungeon = workspace:FindFirstChild("dungeon")
-    if dungeon then
-        for _, v in ipairs(dungeon:GetChildren()) do if v:IsA("ValueBase") then t[v.Name] = v.Value end end
-        local bossRoom = dungeon:FindFirstChild("bossRoom")
-        if bossRoom then for _, v in ipairs(bossRoom:GetChildren()) do if v:IsA("ValueBase") then t[v.Name] = v.Value end end end
-    end
-    return t
+
+local function debug(msg)
+    if Config.DebugMode then print("[V35] " .. msg) end
 end
-local isReplaying = false
-local function triggerReplayOrLobby()
-    if isReplaying then return end
-    isReplaying = true
-    task.wait(3.5)
-    Config.ReplayCount = (Config.ReplayCount or 0) + 1
-    if Config.AutoReplay then
-        local remotes = ReplicatedStorage:FindFirstChild("remotes")
-        local replayRemote = remotes and remotes:FindFirstChild("replayDungeon")
-        if replayRemote then
-            local data = collectDungeonData()
-            pcall(function() replayRemote:FireServer(data) end)
-            task.wait(5)
-            isReplaying = false
-            return
-        end
-    end
-    if Config.AutoBackToLobby then
-        local remotes = ReplicatedStorage:FindFirstChild("remotes")
-        local lobbyRemote = remotes and (remotes:FindFirstChild("teleportToLobby") or remotes:FindFirstChild("returnToLobby"))
-        if lobbyRemote then
-            pcall(function() lobbyRemote:FireServer() end)
-        else
-            TeleportService:Teleport(2414851778, LocalPlayer)
-        end
-    end
-    task.wait(5)
-    isReplaying = false
-end
+
 -- =====================================================
 -- UTILS
 -- =====================================================
 local function getPos(obj)
     if not obj or not obj.Parent then return nil end
-    if obj:IsA("Model") then
-        local pp = obj.PrimaryPart
-        if pp then return pp.Position end
-        local h = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Torso")
-        if h then return h.Position end
-        local p = obj:FindFirstChildWhichIsA("BasePart")
-        if p then return p.Position end
-    elseif obj:IsA("BasePart") then
-        return obj.Position
-    end
+    local hrp = obj:FindFirstChild("HumanoidRootPart")
+    if hrp then return hrp.Position end
+    local h = obj:FindFirstChildOfClass("Humanoid")
+    if h and h.RootPart then return h.RootPart.Position end
+    local pp = obj.PrimaryPart
+    if pp then return pp.Position end
+    local torso = obj:FindFirstChild("UpperTorso") or obj:FindFirstChild("Torso")
+    if torso then return torso.Position end
+    local head = obj:FindFirstChild("Head")
+    if head then return head.Position end
+    local bp = obj:FindFirstChildWhichIsA("BasePart")
+    if bp then return bp.Position end
     return nil
 end
+
 local function getHP(obj)
-    if not obj or not obj.Parent then return 0 end
+    if not obj then return 0, 1 end
     local h = obj:FindFirstChildOfClass("Humanoid")
-    if h then return h.Health end
-    local ev = obj:FindFirstChild("EnemyValues")
-    if ev then
-        local hp = ev:FindFirstChild("Health")
-        if hp then return hp.Value end
-    end
-    return 0
+    if h then return h.Health, h.MaxHealth end
+    return 100, 100
 end
-local function getMaxHP(obj)
-    if not obj or not obj.Parent then return 100 end
-    local h = obj:FindFirstChildOfClass("Humanoid")
-    if h then return h.MaxHealth end
-    local ev = obj:FindFirstChild("EnemyValues")
-    if ev then
-        local mhp = ev:FindFirstChild("MaxHealth")
-        if mhp then return mhp.Value end
-    end
-    return 100
+
+local function getVelocity(obj)
+    local hrp = obj:FindFirstChild("HumanoidRootPart")
+    if hrp then return hrp.AssemblyLinearVelocity end
+    local pp = obj.PrimaryPart
+    if pp then return pp.AssemblyLinearVelocity end
+    return Vector3.new(0, 0, 0)
 end
--- =====================================================
--- BOSS DETECTION
--- =====================================================
-local BossDetect = {}
-local BossKeywords = { "boss", "king", "lord", "dragon", "titan", "emperor", "queen", "guardian", "overlord", "demon" }
-function BossDetect.IsBoss(enemy)
-    if not enemy or not enemy.Parent then return false end
-    if enemy:GetAttribute("IsBoss") == true then return true end
-    local n = enemy.Name:lower()
-    for _, kw in pairs(BossKeywords) do
-        if n:find(kw) then return true end
+
+local function isKeywordMatch(text, keywords)
+    if not text then return false end
+    local lower = text:lower()
+    for _, kw in pairs(keywords) do
+        if lower:find(kw) then return true end
     end
-    local ev = enemy:FindFirstChild("EnemyValues")
-    if ev and ev:FindFirstChild("IsBoss") and ev.IsBoss.Value == true then return true end
-    local h = enemy:FindFirstChildOfClass("Humanoid")
-    if h and h.MaxHealth >= 50000 then return true end
-    local m = enemy:FindFirstChild("IsBoss")
-    if m and m:IsA("BoolValue") and m.Value then return true end
     return false
 end
+
 -- =====================================================
--- BODYGYRO
+-- BOSS DETECTION (giữ để phân loại, KHÔNG dùng để rush)
+-- =====================================================
+local BossDetect = {}
+
+function BossDetect.IsBoss(obj)
+    if not obj or not obj.Parent then return false end
+    local name = obj.Name:lower()
+    if name:find("boss") or name:find("giant") or name:find("lord")
+       or name:find("king") or name:find("titan") or name:find("elite")
+       or name:find("champion") or name:find("dragon") or name:find("demon")
+       or name:find("final") or name:find("overlord") or name:find("ancient")
+       or name:find("behemoth") or name:find("colossus") or name:find("primordial") then
+        return true
+    end
+    local h = obj:FindFirstChildOfClass("Humanoid")
+    if h and h.MaxHealth >= 2000 then return true end
+    local ok, tags = pcall(function() return CollectionService:GetTags(obj) end)
+    if ok and tags then
+        for _, tag in pairs(tags) do
+            local tl = tostring(tag):lower()
+            if tl:find("boss") or tl:find("elite") or tl:find("champion") then
+                return true
+            end
+        end
+    end
+    if obj:FindFirstChild("bossHealthBar", true) or obj:FindFirstChild("BossHealth", true) then
+        return true
+    end
+    return false
+end
+
+-- =====================================================
+-- BODYGYRO (V33)
 -- =====================================================
 local Smooth = {}
-local currentGyro = nil
+local GyroCache = setmetatable({}, {__mode = "k"})
+
+function Smooth.GetGyro(hrp)
+    if not hrp or not hrp.Parent then return nil end
+    local bg = GyroCache[hrp]
+    if bg and bg.Parent then return bg end
+    local old = hrp:FindFirstChild("AutoFarmGyro")
+    if old then old:Destroy() end
+    bg = Instance.new("BodyGyro")
+    bg.Name = "AutoFarmGyro"
+    bg.MaxTorque = Vector3.new(400000, 400000, 400000)
+    bg.P = Config.GyroPower
+    bg.D = Config.GyroDamping
+    bg.Parent = hrp
+    GyroCache[hrp] = bg
+    return bg
+end
+
 function Smooth.FaceTarget(hrp, targetPos)
-    if not hrp or not targetPos then return end
-    if not currentGyro or currentGyro.Parent ~= hrp then
-        if currentGyro then pcall(function() currentGyro:Destroy() end) end
-        currentGyro = Instance.new("BodyGyro")
-        currentGyro.Name = "AutoFarmFaceGyro"
-        currentGyro.MaxTorque = Vector3.new(0, Config.GyroPower, 0)
-        currentGyro.P = Config.GyroPower
-        currentGyro.D = Config.GyroDamping
-        currentGyro.Parent = hrp
-    end
-    local flatTarget = Vector3.new(targetPos.X, hrp.Position.Y, targetPos.Z)
-    local dir = (flatTarget - hrp.Position)
-    if dir.Magnitude > 0.1 then
-        currentGyro.CFrame = CFrame.lookAt(hrp.Position, hrp.Position + dir.Unit)
-    end
+    if not hrp or not hrp.Parent or not targetPos then return end
+    local bg = Smooth.GetGyro(hrp)
+    if not bg then return end
+    local toTarget = Vector3.new(
+        targetPos.X - hrp.Position.X, 0,
+        targetPos.Z - hrp.Position.Z
+    )
+    if toTarget.Magnitude < 0.1 then return end
+    toTarget = toTarget.Unit
+    bg.CFrame = CFrame.lookAt(Vector3.zero, toTarget)
 end
-function Smooth.ClearGyro()
-    if currentGyro then
-        pcall(function() currentGyro:Destroy() end)
-        currentGyro = nil
-    end
+
+function Smooth.DisableAutoRotate(h)
+    if h and h.AutoRotate then h.AutoRotate = false end
 end
+
 -- =====================================================
 -- AUTO START
 -- =====================================================
 local AutoStart = {}
-local LastStartClick = 0
-function AutoStart.FindStartButton()
-    local names = {"Start", "StartGame", "Ready", "ReadyButton", "VoteStart", "StartButton"}
-    for _, name in pairs(names) do
-        local btn = PlayerGui:FindFirstChild(name, true)
-        if btn and btn:IsA("GuiButton") and btn.Visible then return btn end
+local LastStartAction = 0
+local LastStartCheck = 0
+
+local function getDungeonState()
+    local g = LocalPlayer:FindFirstChild("PlayerGui")
+    if not g then return "unknown" end
+    if g:FindFirstChild("countDownGui") then return "starting" end
+    if g:FindFirstChild("timeLeftGui") then return "in_dungeon" end
+    if g:FindFirstChild("completeGui") then return "completed" end
+    if g:FindFirstChild("failedGui") then return "failed" end
+    return "lobby"
+end
+
+local function selectBestDungeon()
+    if not Config.AutoSelectDungeon then return end
+    local ls = LocalPlayer:FindFirstChild("leaderstats")
+    if not ls then return end
+    local L = ls:FindFirstChild("Level")
+    if not L then return end
+    local lvl = L.Value
+    if lvl >= 150 then
+        Config.SelectedDungeon, Config.SelectedDifficulty = "Northern Lands", "Nightmare"
+    elseif lvl >= 100 then
+        Config.SelectedDungeon, Config.SelectedDifficulty = "The Underworld", "Insane"
+    elseif lvl >= 70 then
+        Config.SelectedDungeon, Config.SelectedDifficulty = "Steampunk Sewers", "Hard"
+    elseif lvl >= 50 then
+        Config.SelectedDungeon, Config.SelectedDifficulty = "The Canals", "Medium"
+    elseif lvl >= 30 then
+        Config.SelectedDungeon, Config.SelectedDifficulty = "Pirate Island", "Easy"
+    else
+        Config.SelectedDungeon, Config.SelectedDifficulty = "Desert Temple", "Easy"
     end
-    for _, g in pairs(PlayerGui:GetChildren()) do
-        if g:IsA("ScreenGui") and g.Enabled then
-            for _, d in pairs(g:GetDescendants()) do
-                if d:IsA("GuiButton") and d.Visible then
-                    local t = (d:IsA("TextButton") and d.Text or d.Name):lower()
-                    if t:find("start") or t:find("ready") then return d end
-                end
+end
+
+local function fireChangeStartValue()
+    local remotes = ReplicatedStorage:FindFirstChild("remotes")
+    if not remotes then return false end
+    local cs = remotes:FindFirstChild("changeStartValue")
+    if not cs then return false end
+    pcall(function() cs:FireServer() end)
+    return true
+end
+
+local function findStartButton()
+    local ws = workspace:FindFirstChild("start")
+    if ws then
+        for _, obj in pairs(ws:GetDescendants()) do
+            if obj:IsA("TextButton") then return obj end
+        end
+    end
+    local g = LocalPlayer:FindFirstChild("PlayerGui")
+    if g then
+        local sb = g:FindFirstChild("startButton")
+        if sb then
+            for _, obj in pairs(sb:GetDescendants()) do
+                if obj:IsA("TextButton") then return obj end
             end
         end
     end
     return nil
 end
+
 function AutoStart.Update(dt)
     if not Config.AutoStart then return end
-    if tick() - LastStartClick < 2.0 then return end
-    local btn = AutoStart.FindStartButton()
-    if btn then
-        pcall(function()
-            for _, conn in pairs(getconnections(btn.MouseButton1Click)) do conn:Fire() end
-            for _, conn in pairs(getconnections(btn.MouseButton1Down)) do conn:Fire() end
-            btn:Activate()
-        end)
-        LastStartClick = tick()
-    end
-    local remotes = ReplicatedStorage:FindFirstChild("remotes")
-    if remotes then
-        for _, rn in pairs({"startDungeon", "voteStart", "readyUp"}) do
-            local r = remotes:FindFirstChild(rn)
-            if r then pcall(function() r:FireServer() end); LastStartClick = tick(); break end
+    if tick() - LastStartCheck < 1 then return end
+    LastStartCheck = tick()
+    if tick() - LastStartAction < 3 then return end
+    if getDungeonState() == "lobby" then
+        selectBestDungeon()
+        if fireChangeStartValue() then
+            LastStartAction = tick()
+            return
+        end
+        local btn = findStartButton()
+        if btn then
+            pcall(function() btn.MouseButton1Down:Fire() end)
+            pcall(function() btn.MouseButton1Click:Fire() end)
+            LastStartAction = tick()
         end
     end
 end
+
+AutoStart.Initialize = function()
+    LastStartAction = 0
+    LastStartCheck = 0
+    print("[AutoStart] OK")
+end
+
 -- =====================================================
 -- OBSTACLE
 -- =====================================================
 local Obstacle = {}
-local RayParams = nil
-local Waypoints = {}
-local CurrentWpIdx = 1
-local function initRayParams()
-    RayParams = RaycastParams.new()
-    RayParams.FilterType = RaycastFilterType.Exclude
-    local filter = {}
-    if LocalPlayer.Character then table.insert(filter, LocalPlayer.Character) end
-    local dungeon = workspace:FindFirstChild("dungeon")
-    if dungeon then
-        local enemies = dungeon:FindFirstChild("enemies")
-        if enemies then table.insert(filter, enemies) end
-    end
-    RayParams.FilterDescendantsInstances = filter
+
+local function getRayParams()
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    params.FilterDescendantsInstances = {LocalPlayer.Character}
+    params.IgnoreWater = true
+    return params
 end
-function Obstacle.IsBlocked(from, to)
-    if not RayParams then initRayParams() end
-    local dir = to - from
-    local res = workspace:Raycast(from + Vector3.new(0, 1.5, 0), dir, RayParams)
-    return res ~= nil and res.Instance ~= nil
+
+local function castRay(origin, direction, distance)
+    if distance <= 0 then return nil end
+    local params = getRayParams()
+    return workspace:Raycast(origin, direction.Unit * distance, params)
 end
-function Obstacle.FindClearDirection(hrpPos, desiredDir, checkDist)
-    checkDist = checkDist or 8
-    local bestDir = desiredDir
-    local bestClearDist = 0
-    for angleDeg = -90, 90, 15 do
-        local rad = math.rad(angleDeg)
-        local testDir = Vector3.new(
-            desiredDir.X * math.cos(rad) - desiredDir.Z * math.sin(rad),
-            0,
-            desiredDir.X * math.sin(rad) + desiredDir.Z * math.cos(rad)
-        ).Unit
-        local res = workspace:Raycast(hrpPos + Vector3.new(0, 1.5, 0), testDir * checkDist, RayParams)
-        local clearDist = res and (res.Position - hrpPos).Magnitude or checkDist
-        if clearDist > bestClearDist then
-            bestClearDist = clearDist
-            bestDir = testDir
-            if clearDist >= checkDist then break end
+
+function Obstacle.CanWalkStraight(hrp, targetPos)
+    local origin = hrp.Position + Vector3.new(0, 2, 0)
+    local toTarget = targetPos - hrp.Position
+    toTarget = Vector3.new(toTarget.X, 0, toTarget.Z)
+    local dist = toTarget.Magnitude
+    if dist < 1 then return true end
+    return castRay(origin, toTarget.Unit, dist) == nil
+end
+
+local function wallDistance(hrp, dir, maxDist)
+    local origin = hrp.Position + Vector3.new(0, 2, 0)
+    dir = Vector3.new(dir.X, 0, dir.Z)
+    if dir.Magnitude < 0.01 then return maxDist end
+    local hit = castRay(origin, dir.Unit, maxDist)
+    if hit then return hit.Distance end
+    return maxDist
+end
+
+function Obstacle.IsSpotClear(hrp, targetPos, minWallDist)
+    minWallDist = minWallDist or Config.RetreatMinWallDist
+    local myPos = hrp.Position
+    local toTarget = targetPos - myPos
+    toTarget = Vector3.new(toTarget.X, 0, toTarget.Z)
+    local dist = toTarget.Magnitude
+    if dist < 1 then return true end
+    local hit = castRay(myPos + Vector3.new(0, 2, 0), toTarget.Unit, dist)
+    if hit and hit.Distance < dist * 0.85 then return false end
+    local checkDirs = {Vector3.new(1,0,0), Vector3.new(-1,0,0), Vector3.new(0,0,1), Vector3.new(0,0,-1)}
+    for _, d in pairs(checkDirs) do
+        if wallDistance(hrp, d, minWallDist) < minWallDist * 0.6 then
+            local origin = Vector3.new(targetPos.X, hrp.Position.Y + 2, targetPos.Z)
+            local wh = workspace:Raycast(origin, d * minWallDist, getRayParams())
+            if wh and wh.Distance < minWallDist * 0.7 then return false end
         end
     end
-    return bestDir, bestClearDist
+    return true
 end
-function Obstacle.CalculatePath(from, to)
-    initRayParams()
-    local path = PathfindingService:CreatePath({
-        AgentRadius = 2.0, AgentHeight = 5.0,
-        AgentCanJump = true, AgentCanClimb = false,
-        WaypointSpacing = 4.0,
-    })
-    local ok = pcall(function() path:ComputeAsync(from, to) end)
-    if ok and path.Status == Enum.PathStatus.Success then
-        local wps = path:GetWaypoints()
-        Waypoints = {}
-        for _, wp in ipairs(wps) do table.insert(Waypoints, wp.Position) end
-        CurrentWpIdx = 1
-        return true
+
+-- Tìm hướng lùi KHÔNG đâm vào tường
+function Obstacle.FindSafeRetreatDir(hrp, dangerPos, minWallDist)
+    minWallDist = minWallDist or Config.RetreatMinWallDist
+    local myPos = hrp.Position
+    local awayDir = myPos - dangerPos
+    awayDir = Vector3.new(awayDir.X, 0, awayDir.Z)
+    if awayDir.Magnitude < 0.1 then
+        awayDir = Vector3.new(math.random() - 0.5, 0, math.random() - 0.5)
+    end
+    awayDir = awayDir.Unit
+    local baseAngle = math.atan2(awayDir.Z, awayDir.X)
+    local n = math.max(Config.RetreatSampleAngles, 8)
+    local bestDir, bestScore = awayDir, -math.huge
+    for i = 0, n - 1 do
+        local angle = baseAngle + (i / n) * math.pi * 2
+        local dir = Vector3.new(math.cos(angle), 0, math.sin(angle))
+        local wd = wallDistance(hrp, dir, 20)
+        local dot = dir:Dot(awayDir)
+        local score = wd + dot * 8.0
+        if score > bestScore then bestScore = score; bestDir = dir end
+    end
+    return bestDir
+end
+
+function Obstacle.AddWaypoint(pos)
+    local last = State.Waypoints[#State.Waypoints]
+    if last and (pos - last).Magnitude < Config.WaypointMinDistance then return end
+    table.insert(State.Waypoints, pos)
+    if #State.Waypoints > Config.WaypointHistorySize then
+        table.remove(State.Waypoints, 1)
+    end
+end
+
+function Obstacle.IsLooping(currentPos)
+    if #State.Waypoints < 4 then return false end
+    for i = 1, #State.Waypoints - 2 do
+        if (currentPos - State.Waypoints[i]).Magnitude < Config.WaypointMinDistance then
+            return true
+        end
     end
     return false
 end
-function Obstacle.GetNextWaypoint(hrpPos)
-    if #Waypoints == 0 then return nil end
-    while CurrentWpIdx <= #Waypoints do
-        local wp = Waypoints[CurrentWpIdx]
-        local d = (Vector3.new(wp.X, hrpPos.Y, wp.Z) - hrpPos).Magnitude
-        if d < 4.0 then CurrentWpIdx = CurrentWpIdx + 1 else return wp end
-    end
-    Waypoints = {}
-    CurrentWpIdx = 1
-    return nil
-end
-function Obstacle.HasPath() return #Waypoints > 0 and CurrentWpIdx <= #Waypoints end
-function Obstacle.ClearWaypoints() Waypoints = {}; CurrentWpIdx = 1 end
+
+function Obstacle.ClearWaypoints() State.Waypoints = {} end
+Obstacle.Initialize = function() print("[Obstacle] OK") end
+
 -- =====================================================
 -- PATHFINDING (BodyGyro + MoveTo)
 -- =====================================================
 local Pathfinding = {}
-local LastMoveCall = 0
-local LastPathGen = 0
-function Pathfinding.MoveTo(targetPos, dt, faceTargetPos)
+local LastPathCompute = 0
+local LastPathTarget = nil
+local CurrentPath = nil
+local CurrentWaypointIndex = 1
+local LastUnstickTime = 0
+
+local function computePath(fromPos, toPos)
+    local path = PathfindingService:CreatePath({
+        AgentRadius = 2, AgentHeight = 5,
+        AgentCanJump = true, AgentCanClimb = false, WaypointSpacing = 4,
+    })
+    local ok = pcall(function() path:ComputeAsync(fromPos, toPos) end)
+    if ok and path.Status == Enum.PathStatus.Success then return path end
+    return nil
+end
+
+local function checkStuck(hrp)
+    local moved = (hrp.Position - State.LastPos).Magnitude
+    if moved < 0.3 then
+        State.StuckTime = State.StuckTime + 0.05
+    else
+        State.StuckTime = 0
+    end
+    State.LastPos = hrp.Position
+    return State.StuckTime > Config.StuckThreshold
+end
+
+local function unstick(hrp, h)
+    local now = tick()
+    if now - LastUnstickTime < Config.UnstickCooldown then return end
+    LastUnstickTime = now
+    h.Jump = true
+    local a = math.random() * math.pi * 2
+    h:MoveTo(hrp.Position + Vector3.new(math.cos(a), 0, math.sin(a)) * 15)
+    State.StuckTime = 0
+    CurrentPath = nil
+    LastPathTarget = nil
+end
+
+function Pathfinding.MoveTo(targetPos, dt, facePos)
+    local c = LocalPlayer.Character
+    if not c then return false end
+    local h = c:FindFirstChildOfClass("Humanoid")
+    local hrp = c:FindFirstChild("HumanoidRootPart")
+    if not h or not hrp or h.Health <= 0 then return false end
+
+    Smooth.DisableAutoRotate(h)
+    if facePos then Smooth.FaceTarget(hrp, facePos) end
+
+    if checkStuck(hrp) then unstick(hrp, h); return false end
+    Obstacle.AddWaypoint(hrp.Position)
+    if Obstacle.IsLooping(hrp.Position) then
+        Obstacle.ClearWaypoints()
+        CurrentPath = nil
+        unstick(hrp, h)
+        return false
+    end
+
+    if not Config.EnableObstacleAvoid then
+        h:MoveTo(targetPos)
+        return true
+    end
+
+    if Obstacle.CanWalkStraight(hrp, targetPos) then
+        h:MoveTo(targetPos)
+        CurrentPath = nil
+        LastPathTarget = nil
+        return true
+    end
+
+    local needRecompute = false
+    if not CurrentPath then needRecompute = true
+    elseif not LastPathTarget or (LastPathTarget - targetPos).Magnitude > 5 then needRecompute = true
+    elseif tick() - LastPathCompute > Config.PathRecalcInterval then needRecompute = true
+    end
+
+    if needRecompute then
+        CurrentPath = computePath(hrp.Position, targetPos)
+        LastPathCompute = tick()
+        LastPathTarget = targetPos
+        CurrentWaypointIndex = 1
+    end
+
+    if CurrentPath then
+        local wps = CurrentPath:GetWaypoints()
+        if CurrentWaypointIndex <= #wps then
+            local wp = wps[CurrentWaypointIndex]
+            if (hrp.Position - wp.Position).Magnitude < 4 then
+                CurrentWaypointIndex = CurrentWaypointIndex + 1
+                if CurrentWaypointIndex <= #wps then wp = wps[CurrentWaypointIndex] end
+            end
+            if wp.Action == Enum.PathWaypointAction.Jump then h.Jump = true end
+            h:MoveTo(wp.Position)
+            return true
+        end
+    end
+    h:MoveTo(targetPos)
+    return true
+end
+
+function Pathfinding.StopAndFace(facePos)
     local c = LocalPlayer.Character
     if not c then return end
-    local hrp = c:FindFirstChild("HumanoidRootPart")
     local h = c:FindFirstChildOfClass("Humanoid")
-    if not hrp or not h or h.Health <= 0 then return end
-    if Config.FaceTargetInCombat and faceTargetPos then
-        Smooth.FaceTarget(hrp, faceTargetPos)
-    else
-        Smooth.ClearGyro()
-    end
-    local d = (Vector3.new(targetPos.X, hrp.Position.Y, targetPos.Z) - hrp.Position).Magnitude
-    if d < 1.5 then h:Move(Vector3.zero); return end
-    if not Obstacle.IsBlocked(hrp.Position, targetPos) then
-        Obstacle.ClearWaypoints()
-        local dir = (targetPos - hrp.Position).Unit
-        local moveDir = Vector3.new(dir.X, 0, dir.Z).Unit
-        h:Move(moveDir)
-        return
-    end
-    if not Obstacle.HasPath() and tick() - LastPathGen > Config.PathRecalcInterval then
-        LastPathGen = tick()
-        Obstacle.CalculatePath(hrp.Position, targetPos)
-    end
-    local nextWp = Obstacle.GetNextWaypoint(hrp.Position)
-    if nextWp then
-        local dir = (nextWp - hrp.Position).Unit
-        local moveDir = Vector3.new(dir.X, 0, dir.Z).Unit
-        h:Move(moveDir)
-    else
-        local desiredDir = Vector3.new((targetPos - hrp.Position).X, 0, (targetPos - hrp.Position).Z).Unit
-        local clearDir = Obstacle.FindClearDirection(hrp.Position, desiredDir, 8)
-        h:Move(clearDir)
+    local hrp = c:FindFirstChild("HumanoidRootPart")
+    if not h or not hrp then return end
+    h:MoveTo(hrp.Position)
+    if facePos then Smooth.FaceTarget(hrp, facePos) end
+end
+
+function Pathfinding.AirControl(hrp, targetPos)
+    if not Config.EnableAirControl or not State.IsJumping then return end
+    local vel = hrp.AssemblyLinearVelocity
+    if vel.Y < -5 then
+        local toT = targetPos - hrp.Position
+        if toT.Magnitude > 2 then
+            local dir = toT.Unit
+            hrp.AssemblyLinearVelocity = Vector3.new(dir.X * 20, vel.Y, dir.Z * 20)
+        end
     end
 end
+
 function Pathfinding.Stop()
     local c = LocalPlayer.Character
-    if not c then return end
-    local h = c:FindFirstChildOfClass("Humanoid")
-    if h then h:Move(Vector3.zero) end
-    Smooth.ClearGyro()
+    if c then
+        local h = c:FindFirstChildOfClass("Humanoid")
+        local hrp = c:FindFirstChild("HumanoidRootPart")
+        if h and hrp then h:MoveTo(hrp.Position) end
+    end
+    CurrentPath = nil
+    LastPathTarget = nil
+end
+
+function Pathfinding.Reset()
+    CurrentPath = nil
+    LastPathTarget = nil
+    CurrentWaypointIndex = 1
+    State.StuckTime = 0
     Obstacle.ClearWaypoints()
 end
-function Pathfinding.StopAndFace(faceTargetPos)
-    local c = LocalPlayer.Character
-    if not c then return end
-    local hrp = c:FindFirstChild("HumanoidRootPart")
-    local h = c:FindFirstChildOfClass("Humanoid")
-    if h then h:Move(Vector3.zero) end
-    if hrp and faceTargetPos and Config.FaceTargetInCombat then
-        Smooth.FaceTarget(hrp, faceTargetPos)
-    end
+
+Pathfinding.Initialize = function()
+    CurrentPath = nil
+    LastPathTarget = nil
+    CurrentWaypointIndex = 1
+    LastUnstickTime = 0
+    State.StuckTime = 0
+    print("[Pathfinding] OK (V35)")
 end
-function Pathfinding.Reset() Obstacle.ClearWaypoints(); Smooth.ClearGyro() end
+
 -- =====================================================
--- KITING V45 - BOSS & QUÁI THƯỜNG
+-- KITING V35 - BOSS = QUÁI THƯỜNG (chỉ khác khoảng cách)
 -- =====================================================
 local Kiting = {}
 local TargetTypeCache = {}
+
+local function isPathClear(hrp, targetPos)
+    local params = getRayParams()
+    local origin = hrp.Position + Vector3.new(0, 2, 0)
+    local dir = targetPos - hrp.Position
+    local dist = dir.Magnitude
+    if dist < 1 then return true end
+    dir = Vector3.new(dir.X, 0, dir.Z).Unit
+    local hit = workspace:Raycast(origin, dir * dist, params)
+    return not hit or hit.Distance > dist * 0.85
+end
+
+local function safeOrbitPos(hrp, targetPos, idealRadius, strafeDir)
+    local myPos = hrp.Position
+    local toMe = myPos - targetPos
+    toMe = Vector3.new(toMe.X, 0, toMe.Z)
+    if toMe.Magnitude < 0.1 then toMe = Vector3.new(1, 0, 0) end
+    toMe = toMe.Unit
+    local baseAngle = math.atan2(toMe.Z, toMe.X)
+    local offsets = {0, 0.35, -0.35, 0.7, -0.7, 1.05, -1.05, 1.4, -1.4, 1.8, -1.8, 2.2, -2.2, 2.7, -2.7, 3.14}
+    for _, offset in pairs(offsets) do
+        local angle = baseAngle + offset * strafeDir
+        local cx = targetPos.X + math.cos(angle) * idealRadius
+        local cz = targetPos.Z + math.sin(angle) * idealRadius
+        local cand = Vector3.new(cx, myPos.Y, cz)
+        if isPathClear(hrp, cand) and Obstacle.IsSpotClear(hrp, cand, 5) then
+            return cand
+        end
+    end
+    return nil
+end
+
+local function checkTargetType(target)
+    if not target then return "normal" end
+    local cached = TargetTypeCache[target]
+    if cached then return cached end
+    local t = "normal"
+    if BossDetect.IsBoss(target) then
+        t = "boss"
+    else
+        local name = target.Name:lower()
+        if name:find("archer") or name:find("mage") or name:find("wizard")
+           or name:find("ranger") or name:find("turret") or name:find("cannon")
+           or name:find("sniper") or name:find("gunner") or name:find("shooter") then
+            t = "ranged"
+        end
+    end
+    TargetTypeCache[target] = t
+    return t
+end
+
+-- Khoảng cách mong muốn: boss xa hơn 4 studs, ranged xa hơn 8 studs
+function Kiting.GetIdealDistance(target)
+    local t = checkTargetType(target)
+    if t == "boss" then return Config.KiteDistanceBoss end
+    if t == "ranged" then return Config.KiteDistanceRanged end
+    return Config.KiteDistance
+end
+
+-- Phát hiện enemy đang attack/cast (dùng chung cho CẢ boss và quái)
 local function isEnemyCastingOrAttacking(enemy)
     if not enemy or not enemy.Parent then return false end
     local h = enemy:FindFirstChildOfClass("Humanoid")
@@ -426,110 +632,119 @@ local function isEnemyCastingOrAttacking(enemy)
     local anim = h:FindFirstChildOfClass("Animator")
     if not anim then return false end
     for _, track in pairs(anim:GetPlayingAnimationTracks()) do
-        if not track.Looped and track.Speed > 0.1 and track.Length > 0 then
-            local n = track.Animation and track.Animation.Name:lower() or ""
-            if n:find("attack") or n:find("cast") or n:find("slash")
-               or n:find("swing") or n:find("shoot") or n:find("skill")
-               or n:find("smash") or n:find("spin") or n:find("charge") then
+        if not track.Looped and track.Animation then
+            local aname = (track.Animation.Name or ""):lower()
+            -- Cả attack và telegraph đều coi là "sắp ra chiêu"
+            if isKeywordMatch(aname, {
+                "attack", "punch", "slash", "shoot", "beam", "spell",
+                "skill", "smash", "swing", "strike", "combo", "slam",
+                "stomp", "cast", "windup", "charge", "prepare", "warning",
+                "telegraph", "channel", "ultimate", "bossattack",
+            }) then
                 return true
             end
         end
     end
-    local ev = enemy:FindFirstChild("EnemyValues")
-    if ev then
-        for _, vn in pairs({"IsAttacking", "Casting", "UsingSkill"}) do
-            local val = ev:FindFirstChild(vn)
-            if val and val.Value == true then return true end
-        end
-    end
     return false
 end
-function Kiting.GetIdealDistance(enemy)
-    local isBoss = BossDetect.IsBoss(enemy)
-    return isBoss and Config.BossKiteDistance or Config.KiteDistance
-end
-function Kiting.GetRetreatDistance(enemy)
-    local isBoss = BossDetect.IsBoss(enemy)
-    return isBoss and Config.BossRetreatDistance or Config.RetreatDistance
-end
-function Kiting.GetKitePosition(hrp, enemyPos, enemy, dt)
+
+-- LOGIC CHÍNH: boss và quái đi cùng 1 đường
+function Kiting.GetKitePosition(hrp, targetPos, targetObj, dt)
+    if not Config.EnableKiting then return nil end
     local myPos = hrp.Position
-    local toMe = myPos - enemyPos
-    local flatToMe = Vector3.new(toMe.X, 0, toMe.Z)
-    local currentDist = flatToMe.Magnitude
-    if currentDist < 0.1 then
-        flatToMe = Vector3.new(1, 0, 0)
-        currentDist = 1
-    end
-    local awayDir = flatToMe.Unit
-    local isBoss = BossDetect.IsBoss(enemy)
-    local idealDist = isBoss and Config.BossKiteDistance or Config.KiteDistance
-    local retreatDist = isBoss and Config.BossRetreatDistance or Config.RetreatDistance
-    _G.IdealKiteDistance = idealDist
-    local isAttacking = Config.DetectAttack and isEnemyCastingOrAttacking(enemy)
-    if isAttacking then
-        State.IsTargetAttacking = true
-        State.AttackWarningTime = tick()
-    elseif tick() - State.AttackWarningTime > 0.8 then
-        State.IsTargetAttacking = false
-    end
-    local shouldRetreat = currentDist < retreatDist or State.IsTargetAttacking
-    if shouldRetreat then
-        local retreatDir = awayDir
-        local clearDir, clearDist = Obstacle.FindClearDirection(myPos, retreatDir, 10)
-        local targetDist = math.max(idealDist * 1.1, retreatDist + 8)
-        local candidatePos = enemyPos + clearDir * targetDist
-        return candidatePos, "retreat"
-    end
-    local distDiff = math.abs(currentDist - idealDist)
-    if distDiff <= 4.0 and not State.IsTargetAttacking then
-        if tick() - State.LastDirChange > Config.CircleDirChange then
-            if math.random() < 0.25 then State.KiteDirection = -State.KiteDirection end
-            State.LastDirChange = tick()
+    local toTarget = targetPos - myPos
+    local dist = toTarget.Magnitude
+    if dist < 0.1 then return nil end
+
+    local idealDist = Kiting.GetIdealDistance(targetObj)
+    local isCasting = isEnemyCastingOrAttacking(targetObj)
+
+    -- ==== 1. QUÁ GẦN → RETREAT ====
+    if dist < Config.KiteDistanceMin then
+        local safeDir = Obstacle.FindSafeRetreatDir(hrp, targetPos, Config.RetreatMinWallDist)
+        local extra = isCasting and Config.AttackRetreatExtra or 0
+        local retreatDist = (Config.KiteDistanceMin - dist) + Config.RetreatExtra + extra
+        local retreatPos = myPos + safeDir * retreatDist
+        if Obstacle.IsSpotClear(hrp, retreatPos, Config.RetreatMinWallDist) then
+            return retreatPos, "retreat"
         end
-        State.CurrentKiteAngle = (State.CurrentKiteAngle + State.KiteDirection * Config.CircleSpeed * dt) % (2 * math.pi)
-        local perpDir = Vector3.new(-awayDir.Z, 0, awayDir.X) * State.KiteDirection
-        local circleBlend = 0.85
-        local radialBlend = (idealDist - currentDist) * 0.15
-        local moveDir = (perpDir * circleBlend + awayDir * radialBlend).Unit
-        local clearDir, clearDist = Obstacle.FindClearDirection(myPos, moveDir, 8)
-        if clearDist < 4.0 then
-            State.KiteDirection = -State.KiteDirection
-            State.LastDirChange = tick()
-            moveDir = Vector3.new(awayDir.Z, 0, -awayDir.X) * State.KiteDirection
-            clearDir = Obstacle.FindClearDirection(myPos, moveDir, 8)
+        local rightDir = Vector3.new(-safeDir.Z, 0, safeDir.X)
+        for _, sign in pairs({1, -1}) do
+            local sidePos = myPos + rightDir * sign * retreatDist
+            if Obstacle.IsSpotClear(hrp, sidePos, Config.RetreatMinWallDist) then
+                return sidePos, "retreat"
+            end
         end
-        local stepDist = 8.0
-        local circlePos = myPos + clearDir * stepDist
-        local enemyToCircle = (circlePos - enemyPos)
-        local flatCircleDist = Vector3.new(enemyToCircle.X, 0, enemyToCircle.Z).Magnitude
-        if flatCircleDist < retreatDist then
-            circlePos = enemyPos + (circlePos - enemyPos).Unit * idealDist
+        return retreatPos, "retreat"
+    end
+
+    -- ==== 2. ENEMY ĐANG CAST/ATTACK → RETREAT THÊM ====
+    -- Dù đang trong khoảng lý tưởng, nếu enemy cast → lùi ngay
+    if isCasting and dist < idealDist + 4 then
+        local safeDir = Obstacle.FindSafeRetreatDir(hrp, targetPos, Config.RetreatMinWallDist)
+        local retreatDist = Config.AttackRetreatExtra + 4
+        local retreatPos = myPos + safeDir * retreatDist
+        if Obstacle.IsSpotClear(hrp, retreatPos, Config.RetreatMinWallDist) then
+            return retreatPos, "retreat"
         end
-        return circlePos, "circle"
+        local rightDir = Vector3.new(-safeDir.Z, 0, safeDir.X)
+        for _, sign in pairs({1, -1}) do
+            local sidePos = myPos + rightDir * sign * retreatDist
+            if Obstacle.IsSpotClear(hrp, sidePos, Config.RetreatMinWallDist) then
+                return sidePos, "retreat"
+            end
+        end
+        return retreatPos, "retreat"
     end
-    if currentDist > idealDist + 4.0 then
-        local approachDir = -awayDir
-        local clearDir = Obstacle.FindClearDirection(myPos, approachDir, 10)
-        local targetApproachDist = idealDist + 1.0
-        local approachPos = enemyPos + awayDir * targetApproachDist
-        return approachPos, "approach"
+
+    -- ==== 3. TRONG KHOẢNG LÝ TƯỞNG → CIRCLE STRAFE ====
+    if dist >= Config.KiteDistanceMin and dist <= idealDist + 5 then
+        if Config.EnableCircleStrafe then
+            if tick() - State.LastCircleFlip > 2.5 then
+                State.CircleStrafeDir = -State.CircleStrafeDir
+                State.LastCircleFlip = tick()
+            end
+            local strafeMultiplier = isCasting and 1.3 or 1.0
+            local orbitRadius = idealDist
+            local safePos = safeOrbitPos(hrp, targetPos, orbitRadius, State.CircleStrafeDir)
+            if safePos then
+                local rightDir = hrp.CFrame.RightVector
+                local strafeOffset = rightDir * (Config.StrafeDistance * State.CircleStrafeDir
+                                                 * Config.CircleStrafeSpeed * strafeMultiplier)
+                return safePos + strafeOffset, "circle"
+            end
+            if dist > Config.AttackRange * 0.9 then return targetPos, "approach" end
+            return nil, "attack"
+        end
+        if dist > Config.AttackRange * 0.9 then return targetPos, "approach" end
+        return nil, "attack"
     end
-    return myPos, "hold"
+
+    -- ==== 4. XA QUÁ → APPROACH ====
+    if dist > idealDist + 5 and dist <= Config.KiteDistanceMax then
+        return targetPos, "approach"
+    end
+    if dist > Config.KiteDistanceMax then
+        return targetPos, "approach"
+    end
+    return nil, "hold"
 end
+
 function Kiting.Reset()
-    State.IsKiting = false
-    State.CurrentKiteAngle = 0
-    State.LastDirChange = tick()
-    State.IsTargetAttacking = false
-    State.AttackWarningTime = 0
+    State.CircleStrafeDir = 1
+    State.LastCircleFlip = 0
+    TargetTypeCache = {}
 end
+
+Kiting.Initialize = function() print("[Kiting] OK (V35 boss=quái)") end
+
 -- =====================================================
--- AUTO SKILL (FIX FULL GỬI SERVER & COOLDOWN)
+-- AUTO SKILL
 -- =====================================================
 local AutoSkill = {}
 local LastCast = 0
 local SkillIdx = 1
+
 local function findToolByName(name)
     for _, cont in pairs({LocalPlayer:FindFirstChild("Backpack"), LocalPlayer.Character}) do
         if cont then
@@ -540,75 +755,51 @@ local function findToolByName(name)
     end
     return nil
 end
+
 local function findSlot(slot)
     for _, cont in pairs({LocalPlayer:FindFirstChild("Backpack"), LocalPlayer.Character}) do
         if cont then
             for _, t in pairs(cont:GetChildren()) do
                 if t:IsA("Tool") then
                     local a = t:FindFirstChild("abilitySlot")
-                    if a and tostring(a.Value):lower() == tostring(slot):lower() then return t end
+                    if a and a.Value == slot then return t end
                 end
             end
         end
     end
     return nil
 end
-local function castTool(tool, slotName)
+
+local function castTool(tool)
     if not tool then return false end
     local cd = tool:FindFirstChild("cooldown")
     if cd and cd.Value > 0 then return false end
-    local slot = slotName or (tool:FindFirstChild("abilitySlot") and tostring(tool.abilitySlot.Value):lower()) or "q"
-    local casted = false
-    -- 1. Client Event (VFX, sound & client projectile)
-    local le = tool:FindFirstChild("localEvent")
-    if le then
-        pcall(function() le:Fire() end)
-        casted = true
+    if Config.UseLocalEvent then
+        local le = tool:FindFirstChild("localEvent")
+        if le then pcall(function() le:Fire() end); return true end
     end
-    -- 2. Server Event: abilityUsed (CRITICAL - DEALS DAMAGE & SERVER CAST)
-    local remotes = ReplicatedStorage:FindFirstChild("remotes")
-    if remotes and remotes:FindFirstChild("abilityUsed") then
-        pcall(function() remotes.abilityUsed:FireServer(slot, tool) end)
-        casted = true
-    end
-    -- 3. Tool internal RemoteEvents
-    for _, rn in pairs({"spellEvent", "abilityEvent", "fireballShootEvent"}) do
+    for _, rn in pairs({"spellEvent","abilityEvent","fireballShootEvent"}) do
         local r = tool:FindFirstChild(rn)
-        if r then
-            pcall(function() r:FireServer() end)
-            casted = true
-        end
+        if r then pcall(function() r:FireServer() end); return true end
     end
-    -- 4. VirtualInputManager keypress (direct UIS.lua trigger)
-    pcall(function()
-        local vim = game:GetService("VirtualInputManager")
-        if vim then
-            local key = (slot == "e" or slot == "e2") and Enum.KeyCode.E or Enum.KeyCode.Q
-            vim:SendKeyEvent(true, key, false, game)
-            task.wait(0.01)
-            vim:SendKeyEvent(false, key, false, game)
-        end
-    end)
-    return casted
+    return false
 end
+
 local function getNextSkill()
     local priority = Config.SkillPriority
-    if not priority or #priority == 0 then priority = {"q", "e", "q2", "e2"} end
+    if #priority == 0 then priority = {"q", "e", "q2", "e2"} end
     for i = 1, #priority do
         local idx = ((SkillIdx + i - 2) % #priority) + 1
         local nameOrSlot = priority[idx]
         local t = findSlot(nameOrSlot) or findToolByName(nameOrSlot)
         if t then
             local cd = t:FindFirstChild("cooldown")
-            if cd and cd.Value <= 0 then
-                SkillIdx = idx
-                local sName = (t:FindFirstChild("abilitySlot") and tostring(t.abilitySlot.Value):lower()) or tostring(nameOrSlot):lower()
-                return t, sName
-            end
+            if cd and cd.Value <= 0 then SkillIdx = idx; return t end
         end
     end
-    return nil, nil
+    return nil
 end
+
 function AutoSkill.Update(dt)
     if not Config.AutoSkill then return end
     if tick() - LastCast < Config.SkillDelay then return end
@@ -618,30 +809,23 @@ function AutoSkill.Update(dt)
     if not h or h.Health <= 0 then return end
     local bc = c:FindFirstChild("busyCasting")
     if bc and bc.Value == true then return end
-    local target = _G.CurrentTarget or (AutoTarget and AutoTarget.GetBestEnemy())
-    if not target or not target.Parent then return end
-    local targetPos = getPos(target)
-    if targetPos then
-        local hrp = c:FindFirstChild("HumanoidRootPart")
-        if hrp and (targetPos - hrp.Position).Magnitude > Config.FarmRange then
-            return
-        end
-    end
-    local t, slotName = getNextSkill()
-    if t and castTool(t, slotName) then
-        LastCast = tick()
-    end
+    if not _G.CurrentTarget or not _G.CurrentTarget.Parent then return end
+    local t = getNextSkill()
+    if t and castTool(t) then LastCast = tick() end
 end
+
 AutoSkill.Initialize = function()
     LastCast = 0
     SkillIdx = 1
     print("[AutoSkill] OK")
 end
+
 -- =====================================================
 -- WALK SPEED
 -- =====================================================
 local WalkSpeed = {}
 local LastSpeedSet = 0
+
 function WalkSpeed.Update(dt)
     if not Config.CustomWalkSpeed then return end
     if tick() - LastSpeedSet < 0.5 then return end
@@ -649,542 +833,772 @@ function WalkSpeed.Update(dt)
     if not c then return end
     local h = c:FindFirstChildOfClass("Humanoid")
     if not h then return end
-    local targetSpeed = Config.WalkSpeed
-    if math.abs(h.WalkSpeed - targetSpeed) > 0.5 then
-        h.WalkSpeed = targetSpeed
+    if math.abs(h.WalkSpeed - 20) > 0.5 then
+        h.WalkSpeed = 20
         LastSpeedSet = tick()
     end
+    if h.AutoRotate then h.AutoRotate = false end
 end
+
+WalkSpeed.Initialize = function()
+    LastSpeedSet = 0
+    print("[WalkSpeed] OK (20)")
+end
+
 -- =====================================================
--- VISUALIZE
+-- VISUALIZE (chỉ hiển thị khoảng cách lý tưởng)
 -- =====================================================
 local Visualize = {}
 local VisualizeEnabled = false
 local VisualizeParts = {}
-function Visualize.Update()
-    if not VisualizeEnabled then
-        Visualize.Clear()
-        return
-    end
-end
+
 function Visualize.Clear()
     for _, p in pairs(VisualizeParts) do
-        if p and p.Parent then pcall(function() p:Destroy() end) end
+        if p and p.Parent then p:Destroy() end
     end
     VisualizeParts = {}
 end
--- =====================================================
--- UI REAPERX DARK THEME (FLOATING MINIMIZE CIRCLE)
--- =====================================================
-local UI = {}
-local ScreenGui, MainFrame, FloatCircle
-local SubtitleLabel, statusMapLabel, replayCountLabel
-local dungeonStepper, diffStepper
-local ToggleCallbacks = {}
-local dungeonList = {
-    "Desert Temple", "Winter Outpost", "Pirate Island",
-    "King's Castle", "The Underworld", "Samurai Palace",
-    "The Canals", "Ghastly Harbor", "Steampunk Sewers",
-    "Orbital Outpost", "Northern Lands"
-}
-local diffList = {"Easy", "Medium", "Hard", "Insane", "Nightmare"}
-local function setUIVisible(visible)
-    if MainFrame then MainFrame.Visible = visible end
-    if FloatCircle then FloatCircle.Visible = not visible end
+
+function Visualize.DrawSphere(pos, radius, color)
+    local part = Instance.new("Part")
+    part.Anchored = true; part.CanCollide = false
+    part.Material = Enum.Material.Neon; part.Color = color
+    part.Shape = Enum.PartType.Ball
+    part.Size = Vector3.new(radius * 2, radius * 2, radius * 2)
+    part.CFrame = CFrame.new(pos); part.Transparency = 0.7
+    part.Parent = workspace
+    table.insert(VisualizeParts, part)
+    task.delay(0.15, function() if part and part.Parent then part:Destroy() end end)
 end
-local function createToggle(parent, labelText, defaultVal, callback)
-    local row = Instance.new("Frame")
-    row.Size = UDim2.new(1, 0, 0, 32)
-    row.BackgroundTransparency = 1
-    row.Parent = parent
-    local lbl = Instance.new("TextLabel")
-    lbl.Size = UDim2.new(1, -55, 1, 0)
-    lbl.Position = UDim2.new(0, 4, 0, 0)
-    lbl.BackgroundTransparency = 1
-    lbl.Text = labelText
-    lbl.TextColor3 = Color3.fromRGB(220, 220, 230)
-    lbl.Font = Enum.Font.GothamMedium
-    lbl.TextSize = 12
-    lbl.TextXAlignment = Enum.TextXAlignment.Left
-    lbl.Parent = row
-    local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(0, 44, 0, 22)
-    btn.Position = UDim2.new(1, -48, 0.5, -11)
-    btn.BackgroundColor3 = defaultVal and Color3.fromRGB(255, 136, 0) or Color3.fromRGB(45, 45, 55)
-    btn.Text = ""
-    btn.AutoButtonColor = false
-    btn.Parent = row
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(1, 0)
-    corner.Parent = btn
-    local circle = Instance.new("Frame")
-    circle.Size = UDim2.new(0, 16, 0, 16)
-    circle.Position = defaultVal and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8)
-    circle.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    circle.BorderSizePixel = 0
-    circle.Parent = btn
-    local cCorner = Instance.new("UICorner")
-    cCorner.CornerRadius = UDim.new(1, 0)
-    cCorner.Parent = circle
-    local val = defaultVal
-    btn.MouseButton1Click:Connect(function()
-        val = not val
-        btn.BackgroundColor3 = val and Color3.fromRGB(255, 136, 0) or Color3.fromRGB(45, 45, 55)
-        circle:TweenPosition(
-            val and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8),
-            Enum.EasingDirection.Out, Enum.EasingStyle.Quad, 0.15, true
-        )
-        if callback then callback(val) end
-    end)
-    return {
-        SetValue = function(newVal)
-            val = newVal
-            btn.BackgroundColor3 = val and Color3.fromRGB(255, 136, 0) or Color3.fromRGB(45, 45, 55)
-            circle.Position = val and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8)
-        end
-    }
-end
-local function createStepper(parent, labelText, list, defaultItem, onSelect)
-    local frame = Instance.new("Frame")
-    frame.Size = UDim2.new(1, 0, 0, 48)
-    frame.BackgroundTransparency = 1
-    frame.Parent = parent
-    local lbl = Instance.new("TextLabel")
-    lbl.Size = UDim2.new(1, 0, 0, 18)
-    lbl.BackgroundTransparency = 1
-    lbl.Text = labelText
-    lbl.TextColor3 = Color3.fromRGB(180, 180, 190)
-    lbl.Font = Enum.Font.GothamMedium
-    lbl.TextSize = 11
-    lbl.TextXAlignment = Enum.TextXAlignment.Left
-    lbl.Parent = frame
-    local row = Instance.new("Frame")
-    row.Size = UDim2.new(1, 0, 0, 26)
-    row.Position = UDim2.new(0, 0, 0, 20)
-    row.BackgroundColor3 = Color3.fromRGB(28, 28, 36)
-    row.BorderSizePixel = 0
-    row.Parent = frame
-    local rCorner = Instance.new("UICorner")
-    rCorner.CornerRadius = UDim.new(0, 6)
-    rCorner.Parent = row
-    local valIndex = 1
-    for i, item in ipairs(list) do
-        if item == defaultItem then valIndex = i; break end
-    end
-    local valLabel = Instance.new("TextLabel")
-    valLabel.Size = UDim2.new(1, -60, 1, 0)
-    valLabel.Position = UDim2.new(0, 30, 0, 0)
-    valLabel.BackgroundTransparency = 1
-    valLabel.Text = list[valIndex] or "N/A"
-    valLabel.TextColor3 = Color3.fromRGB(255, 180, 50)
-    valLabel.Font = Enum.Font.GothamBold
-    valLabel.TextSize = 12
-    valLabel.Parent = row
-    local prevBtn = Instance.new("TextButton")
-    prevBtn.Size = UDim2.new(0, 26, 1, 0)
-    prevBtn.BackgroundTransparency = 1
-    prevBtn.Text = "◀"
-    prevBtn.TextColor3 = Color3.fromRGB(200, 200, 210)
-    prevBtn.Font = Enum.Font.GothamBold
-    prevBtn.TextSize = 11
-    prevBtn.Parent = row
-    local nextBtn = Instance.new("TextButton")
-    nextBtn.Size = UDim2.new(0, 26, 1, 0)
-    nextBtn.Position = UDim2.new(1, -26, 0, 0)
-    nextBtn.BackgroundTransparency = 1
-    nextBtn.Text = "▶"
-    nextBtn.TextColor3 = Color3.fromRGB(200, 200, 210)
-    nextBtn.Font = Enum.Font.GothamBold
-    nextBtn.TextSize = 11
-    nextBtn.Parent = row
-    local function updateVal()
-        valLabel.Text = list[valIndex]
-        if onSelect then onSelect(list[valIndex]) end
-    end
-    prevBtn.MouseButton1Click:Connect(function()
-        valIndex = valIndex - 1
-        if valIndex < 1 then valIndex = #list end
-        updateVal()
-    end)
-    nextBtn.MouseButton1Click:Connect(function()
-        valIndex = valIndex + 1
-        if valIndex > #list then valIndex = 1 end
-        updateVal()
-    end)
-    return {
-        Set = function(name)
-            for i, it in ipairs(list) do
-                if it == name then valIndex = i; valLabel.Text = it; break end
+
+function Visualize.Update()
+    if not VisualizeEnabled then return end
+    local c = LocalPlayer.Character
+    if not c then return end
+    if _G.CurrentTarget and _G.CurrentTarget.Parent then
+        local targetPos = getPos(_G.CurrentTarget)
+        if targetPos then
+            local idealDist = Kiting.GetIdealDistance(_G.CurrentTarget)
+            if idealDist > 0 then
+                Visualize.DrawSphere(targetPos, idealDist, Color3.fromRGB(0, 100, 255))
             end
         end
-    }
+    end
 end
-function UI.Initialize()
-    local old = PlayerGui:FindFirstChild("ReaperX_V45")
-    if old then old:Destroy() end
+
+function Visualize.Toggle()
+    VisualizeEnabled = not VisualizeEnabled
+    if not VisualizeEnabled then Visualize.Clear() end
+    print("[Visualize] " .. (VisualizeEnabled and "ON" or "OFF"))
+end
+
+-- =====================================================
+-- UI
+-- =====================================================
+local UI = {}
+local ScreenGui, MainFrame, ToggleBtn
+local ToggleButtons = {}
+local StatusLabels = {}
+local IsDragging = false
+local DragStart, StartPos
+
+local function makeToggleRow(parent, name, text, initial, yPos, cb)
+    local row = Instance.new("Frame")
+    row.Size = UDim2.new(1, -10, 0, 24)
+    row.Position = UDim2.new(0, 5, 0, yPos)
+    row.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+    row.BorderSizePixel = 0; row.ZIndex = 6; row.Parent = parent
+    local rc = Instance.new("UICorner"); rc.CornerRadius = UDim.new(0, 4); rc.Parent = row
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(0.65, 0, 1, 0); lbl.Position = UDim2.new(0, 8, 0, 0)
+    lbl.BackgroundTransparency = 1; lbl.Text = text
+    lbl.TextColor3 = Color3.fromRGB(230, 230, 230); lbl.TextSize = 10
+    lbl.Font = Enum.Font.Gotham; lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.ZIndex = 7; lbl.Parent = row
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0, 45, 0, 18); btn.Position = UDim2.new(1, -50, 0.5, -9)
+    btn.BackgroundColor3 = initial and Color3.fromRGB(0, 180, 0) or Color3.fromRGB(180, 0, 0)
+    btn.BorderSizePixel = 0; btn.Text = initial and "ON" or "OFF"
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255); btn.TextSize = 9
+    btn.Font = Enum.Font.GothamBold; btn.ZIndex = 7; btn.Parent = row
+    local bc = Instance.new("UICorner"); bc.CornerRadius = UDim.new(0, 9); bc.Parent = btn
+    local cur = initial
+    btn.MouseButton1Click:Connect(function()
+        cur = not cur
+        btn.BackgroundColor3 = cur and Color3.fromRGB(0, 180, 0) or Color3.fromRGB(180, 0, 0)
+        btn.Text = cur and "ON" or "OFF"
+        if cb then cb(cur) end
+    end)
+    ToggleButtons[name] = {setValue = function(v)
+        cur = v
+        btn.BackgroundColor3 = v and Color3.fromRGB(0, 180, 0) or Color3.fromRGB(180, 0, 0)
+        btn.Text = v and "ON" or "OFF"
+    end}
+end
+
+local function makeStatusRow(parent, name, text, yPos)
+    local row = Instance.new("Frame")
+    row.Size = UDim2.new(1, -10, 0, 18)
+    row.Position = UDim2.new(0, 5, 0, yPos)
+    row.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+    row.BorderSizePixel = 0; row.ZIndex = 6; row.Parent = parent
+    local rc = Instance.new("UICorner"); rc.CornerRadius = UDim.new(0, 3); rc.Parent = row
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(0.5, 0, 1, 0); lbl.Position = UDim2.new(0, 8, 0, 0)
+    lbl.BackgroundTransparency = 1; lbl.Text = text
+    lbl.TextColor3 = Color3.fromRGB(180, 180, 180); lbl.TextSize = 9
+    lbl.Font = Enum.Font.Gotham; lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.ZIndex = 7; lbl.Parent = row
+    local val = Instance.new("TextLabel")
+    val.Size = UDim2.new(0.5, -8, 1, 0); val.Position = UDim2.new(0.5, 0, 0, 0)
+    val.BackgroundTransparency = 1; val.Text = "N/A"
+    val.TextColor3 = Color3.fromRGB(0, 255, 0); val.TextSize = 9
+    val.Font = Enum.Font.GothamBold; val.TextXAlignment = Enum.TextXAlignment.Right
+    val.ZIndex = 7; val.Parent = row
+    StatusLabels[name] = val
+end
+
+local function makeSection(parent, text, yPos)
+    local sec = Instance.new("Frame")
+    sec.Size = UDim2.new(1, -10, 0, 18); sec.Position = UDim2.new(0, 5, 0, yPos)
+    sec.BackgroundColor3 = Color3.fromRGB(15, 15, 15); sec.BorderSizePixel = 0
+    sec.ZIndex = 6; sec.Parent = parent
+    local sc = Instance.new("UICorner"); sc.CornerRadius = UDim.new(0, 3); sc.Parent = sec
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(1, -10, 1, 0); lbl.Position = UDim2.new(0, 8, 0, 0)
+    lbl.BackgroundTransparency = 1; lbl.Text = text
+    lbl.TextColor3 = Color3.fromRGB(0, 255, 0); lbl.TextSize = 9
+    lbl.Font = Enum.Font.GothamBold; lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.ZIndex = 7; lbl.Parent = sec
+end
+
+local function buildUI()
+    for _, name in pairs({"AutoFarmV30","AutoFarmV31","AutoFarmV31_1","AutoFarmV32","AutoFarmV33","AutoFarmV34","AutoFarmV35"}) do
+        local old = PlayerGui:FindFirstChild(name)
+        if old then old:Destroy() end
+    end
     ScreenGui = Instance.new("ScreenGui")
-    ScreenGui.Name = "ReaperX_V45"
+    ScreenGui.Name = "AutoFarmV35"
     ScreenGui.ResetOnSpawn = false
     ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     ScreenGui.Parent = PlayerGui
-    -- [FLOAT CIRCLE] Nút tròn thu nhỏ kéo thả được
-    FloatCircle = Instance.new("ImageButton")
-    FloatCircle.Name = "FloatCircle"
-    FloatCircle.Size = UDim2.new(0, 48, 0, 48)
-    FloatCircle.Position = UDim2.new(0, 20, 0.5, -24)
-    FloatCircle.BackgroundColor3 = Color3.fromRGB(255, 136, 0)
-    FloatCircle.Visible = false
-    FloatCircle.Active = true
-    FloatCircle.Draggable = true
-    FloatCircle.Parent = ScreenGui
-    local fcCorner = Instance.new("UICorner")
-    fcCorner.CornerRadius = UDim.new(1, 0)
-    fcCorner.Parent = FloatCircle
-    local fcIcon = Instance.new("TextLabel")
-    fcIcon.Size = UDim2.new(1, 0, 1, 0)
-    fcIcon.BackgroundTransparency = 1
-    fcIcon.Text = "🗡️"
-    fcIcon.TextSize = 22
-    fcIcon.Parent = FloatCircle
-    FloatCircle.MouseButton1Click:Connect(function()
-        setUIVisible(true)
-    end)
-    -- [MAIN FRAME] Bảng ReaperX
+    ToggleBtn = Instance.new("TextButton")
+    ToggleBtn.Size = UDim2.new(0, 40, 0, 40)
+    ToggleBtn.Position = UDim2.new(0, 10, 0.5, -20)
+    ToggleBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    ToggleBtn.BorderSizePixel = 0; ToggleBtn.Text = "V35"
+    ToggleBtn.TextColor3 = Color3.fromRGB(0, 255, 0); ToggleBtn.TextSize = 11
+    ToggleBtn.Font = Enum.Font.GothamBold
+    ToggleBtn.ZIndex = 10; ToggleBtn.Parent = ScreenGui
+    local tc = Instance.new("UICorner"); tc.CornerRadius = UDim.new(1, 0); tc.Parent = ToggleBtn
+    local ts = Instance.new("UIStroke"); ts.Color = Color3.fromRGB(0, 255, 0); ts.Thickness = 2; ts.Parent = ToggleBtn
     MainFrame = Instance.new("Frame")
-    MainFrame.Name = "MainFrame"
-    MainFrame.Size = UDim2.new(0, 460, 0, 360)
-    MainFrame.Position = UDim2.new(0.5, -230, 0.5, -180)
-    MainFrame.BackgroundColor3 = Color3.fromRGB(18, 18, 24)
-    MainFrame.BorderSizePixel = 0
-    MainFrame.Active = true
-    MainFrame.Draggable = true
-    MainFrame.Parent = ScreenGui
-    local mfCorner = Instance.new("UICorner")
-    mfCorner.CornerRadius = UDim.new(0, 10)
-    mfCorner.Parent = MainFrame
-    local mfStroke = Instance.new("UIStroke")
-    mfStroke.Color = Color3.fromRGB(255, 136, 0)
-    mfStroke.Thickness = 1.2
-    mfStroke.Parent = MainFrame
-    -- [HEADER]
-    local Header = Instance.new("Frame")
-    Header.Size = UDim2.new(1, 0, 0, 44)
-    Header.BackgroundColor3 = Color3.fromRGB(25, 25, 33)
-    Header.BorderSizePixel = 0
-    Header.Parent = MainFrame
-    local hCorner = Instance.new("UICorner")
-    hCorner.CornerRadius = UDim.new(0, 10)
-    hCorner.Parent = Header
-    local Title = Instance.new("TextLabel")
-    Title.Size = UDim2.new(1, -120, 0, 24)
-    Title.Position = UDim2.new(0, 14, 0, 4)
-    Title.BackgroundTransparency = 1
-    Title.Text = "⚡ REAPERX | DUNGEON QUEST V45"
-    Title.TextColor3 = Color3.fromRGB(255, 150, 0)
-    Title.Font = Enum.Font.GothamBold
-    Title.TextSize = 14
-    Title.TextXAlignment = Enum.TextXAlignment.Left
-    Title.Parent = Header
-    SubtitleLabel = Instance.new("TextLabel")
-    SubtitleLabel.Size = UDim2.new(1, -120, 0, 14)
-    SubtitleLabel.Position = UDim2.new(0, 14, 0, 26)
-    SubtitleLabel.BackgroundTransparency = 1
-    SubtitleLabel.Text = "Status: Idle | Kills: 0 | Speed: 20"
-    SubtitleLabel.TextColor3 = Color3.fromRGB(150, 150, 165)
-    SubtitleLabel.Font = Enum.Font.Gotham
-    SubtitleLabel.TextSize = 10
-    SubtitleLabel.TextXAlignment = Enum.TextXAlignment.Left
-    SubtitleLabel.Parent = Header
-    -- Nút thu nhỏ [ — ]
-    local MinBtn = Instance.new("TextButton")
-    MinBtn.Size = UDim2.new(0, 28, 0, 28)
-    MinBtn.Position = UDim2.new(1, -66, 0.5, -14)
-    MinBtn.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
-    MinBtn.Text = "—"
-    MinBtn.TextColor3 = Color3.fromRGB(220, 220, 230)
-    MinBtn.Font = Enum.Font.GothamBold
-    MinBtn.TextSize = 14
-    MinBtn.AutoButtonColor = false
-    MinBtn.Parent = Header
-    local mbCorner = Instance.new("UICorner")
-    mbCorner.CornerRadius = UDim.new(0, 6)
-    mbCorner.Parent = MinBtn
-    MinBtn.MouseButton1Click:Connect(function()
-        setUIVisible(false)
+    MainFrame.Size = UDim2.new(0, 260, 0, 720)
+    MainFrame.Position = UDim2.new(0, 60, 0.5, -360)
+    MainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    MainFrame.BorderSizePixel = 0; MainFrame.Visible = false
+    MainFrame.ZIndex = 5; MainFrame.Parent = ScreenGui
+    local mc = Instance.new("UICorner"); mc.CornerRadius = UDim.new(0, 8); mc.Parent = MainFrame
+    local ms = Instance.new("UIStroke"); ms.Color = Color3.fromRGB(0, 255, 0); ms.Thickness = 2; ms.Parent = MainFrame
+    local header = Instance.new("Frame")
+    header.Size = UDim2.new(1, 0, 0, 32)
+    header.BackgroundColor3 = Color3.fromRGB(15, 15, 15); header.BorderSizePixel = 0
+    header.ZIndex = 6; header.Parent = MainFrame
+    local hc = Instance.new("UICorner"); hc.CornerRadius = UDim.new(0, 8); hc.Parent = header
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, -40, 1, 0); title.Position = UDim2.new(0, 10, 0, 0)
+    title.BackgroundTransparency = 1; title.Text = "AUTO FARM V35 - KITE BOSS"
+    title.TextColor3 = Color3.fromRGB(0, 255, 0); title.TextSize = 11
+    title.Font = Enum.Font.GothamBold; title.TextXAlignment = Enum.TextXAlignment.Left
+    title.ZIndex = 7; title.Parent = header
+    local closeBtn = Instance.new("TextButton")
+    closeBtn.Size = UDim2.new(0, 26, 0, 26); closeBtn.Position = UDim2.new(1, -30, 0, 3)
+    closeBtn.BackgroundColor3 = Color3.fromRGB(150, 30, 30); closeBtn.BorderSizePixel = 0
+    closeBtn.Text = "X"; closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    closeBtn.TextSize = 11; closeBtn.Font = Enum.Font.GothamBold
+    closeBtn.ZIndex = 7; closeBtn.Parent = header
+    local cc = Instance.new("UICorner"); cc.CornerRadius = UDim.new(0, 4); cc.Parent = closeBtn
+    closeBtn.MouseButton1Click:Connect(function() MainFrame.Visible = false end)
+    local container = Instance.new("Frame")
+    container.Size = UDim2.new(1, 0, 1, -34); container.Position = UDim2.new(0, 0, 0, 34)
+    container.BackgroundTransparency = 1; container.BorderSizePixel = 0
+    container.ZIndex = 5; container.Parent = MainFrame
+    makeSection(container, "══ TÍNH NĂNG ══", 5)
+    local y = 28
+    makeToggleRow(container, "AutoFarm", "Auto Farm (F2)", Config.AutoFarm, y, function(v) Config.AutoFarm = v end); y = y + 26
+    makeToggleRow(container, "AutoSkill", "Auto Skill Q/E (F6)", Config.AutoSkill, y, function(v) Config.AutoSkill = v end); y = y + 26
+    makeToggleRow(container, "AutoStart", "Auto Start (F10)", Config.AutoStart, y, function(v) Config.AutoStart = v end); y = y + 26
+    makeToggleRow(container, "AutoAttack", "Auto Attack", Config.AutoAttack, y, function(v) Config.AutoAttack = v end); y = y + 26
+    makeToggleRow(container, "AutoOpenChest", "Auto Open Chest", Config.AutoOpenChest, y, function(v) Config.AutoOpenChest = v end); y = y + 26
+    makeToggleRow(container, "AutoClearRoom", "Auto Clear Room", Config.AutoClearRoom, y, function(v) Config.AutoClearRoom = v end); y = y + 26
+    makeToggleRow(container, "CustomWalkSpeed", "Speed = 20", Config.CustomWalkSpeed, y, function(v) Config.CustomWalkSpeed = v end); y = y + 26
+    makeToggleRow(container, "EnableKiting", "Combat Kiting (F9)", Config.EnableKiting, y, function(v) Config.EnableKiting = v end); y = y + 26
+    makeToggleRow(container, "EnableCircleStrafe", "Circle Strafe", Config.EnableCircleStrafe, y, function(v) Config.EnableCircleStrafe = v end); y = y + 30
+    makeSection(container, "══ TRẠNG THÁI ══", y); y = y + 22
+    makeStatusRow(container, "HP", "HP:", y); y = y + 19
+    makeStatusRow(container, "Target", "Target:", y); y = y + 19
+    makeStatusRow(container, "TargetType", "Loại:", y); y = y + 19
+    makeStatusRow(container, "Dist", "Distance:", y); y = y + 19
+    makeStatusRow(container, "IdealDist", "Ideal:", y); y = y + 19
+    makeStatusRow(container, "Casting", "Enemy cast:", y); y = y + 19
+    makeStatusRow(container, "Enemies", "Enemies:", y); y = y + 19
+    makeStatusRow(container, "Kills", "Kills:", y); y = y + 19
+    makeStatusRow(container, "Speed", "Walk Speed:", y); y = y + 19
+    makeStatusRow(container, "State", "State:", y); y = y + 24
+
+    local dbgBtn = Instance.new("TextButton")
+    dbgBtn.Size = UDim2.new(0.5, -7, 0, 22); dbgBtn.Position = UDim2.new(0, 5, 0, y)
+    dbgBtn.BackgroundColor3 = Color3.fromRGB(0, 100, 180); dbgBtn.BorderSizePixel = 0
+    dbgBtn.Text = "ENEMIES (F12)"; dbgBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    dbgBtn.TextSize = 9; dbgBtn.Font = Enum.Font.GothamBold
+    dbgBtn.ZIndex = 7; dbgBtn.Parent = container
+    local dbc = Instance.new("UICorner"); dbc.CornerRadius = UDim.new(0, 5); dbc.Parent = dbgBtn
+    dbgBtn.MouseButton1Click:Connect(function() AutoTarget.DebugListEnemies() end)
+
+    local visBtn = Instance.new("TextButton")
+    visBtn.Size = UDim2.new(0.5, -7, 0, 22); visBtn.Position = UDim2.new(0.5, 2, 0, y)
+    visBtn.BackgroundColor3 = Color3.fromRGB(100, 50, 150); visBtn.BorderSizePixel = 0
+    visBtn.Text = "VISUALIZE (F11)"; visBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    visBtn.TextSize = 9; visBtn.Font = Enum.Font.GothamBold
+    visBtn.ZIndex = 7; visBtn.Parent = container
+    local visc = Instance.new("UICorner"); visc.CornerRadius = UDim.new(0, 5); visc.Parent = visBtn
+    visBtn.MouseButton1Click:Connect(function() Visualize.Toggle() end)
+    y = y + 26
+
+    local panicBtn = Instance.new("TextButton")
+    panicBtn.Size = UDim2.new(1, -10, 0, 30); panicBtn.Position = UDim2.new(0, 5, 0, y)
+    panicBtn.BackgroundColor3 = Color3.fromRGB(180, 0, 0); panicBtn.BorderSizePixel = 0
+    panicBtn.Text = "⚠ PANIC ⚠"; panicBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    panicBtn.TextSize = 10; panicBtn.Font = Enum.Font.GothamBold
+    panicBtn.ZIndex = 7; panicBtn.Parent = container
+    local pc = Instance.new("UICorner"); pc.CornerRadius = UDim.new(0, 5); pc.Parent = panicBtn
+    panicBtn.MouseButton1Click:Connect(function()
+        State.Running = false
+        Config.AutoFarm = false; Config.AutoSkill = false
+        Config.AutoStart = false; Config.AutoAttack = false
+        for _, d in pairs(ToggleButtons) do
+            if d.setValue then d.setValue(false) end
+        end
+        Pathfinding.Stop()
+        print("[V35] PANIC!")
     end)
-    -- Nút đóng [ ✕ ]
-    local CloseBtn = Instance.new("TextButton")
-    CloseBtn.Size = UDim2.new(0, 28, 0, 28)
-    CloseBtn.Position = UDim2.new(1, -34, 0.5, -14)
-    CloseBtn.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
-    CloseBtn.Text = "✕"
-    CloseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    CloseBtn.Font = Enum.Font.GothamBold
-    CloseBtn.TextSize = 12
-    CloseBtn.AutoButtonColor = false
-    CloseBtn.Parent = Header
-    local cbCorner = Instance.new("UICorner")
-    cbCorner.CornerRadius = UDim.new(0, 6)
-    cbCorner.Parent = CloseBtn
-    CloseBtn.MouseButton1Click:Connect(function()
-        ScreenGui.Enabled = false
+    header.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            IsDragging = true; DragStart = input.Position; StartPos = MainFrame.Position
+        end
     end)
-    -- [TABS HEADER]
-    local TabBar = Instance.new("Frame")
-    TabBar.Size = UDim2.new(1, -20, 0, 28)
-    TabBar.Position = UDim2.new(0, 10, 0, 48)
-    TabBar.BackgroundTransparency = 1
-    TabBar.Parent = MainFrame
-    local TabContent = Instance.new("Frame")
-    TabContent.Size = UDim2.new(1, -20, 1, -86)
-    TabContent.Position = UDim2.new(0, 10, 0, 78)
-    TabContent.BackgroundTransparency = 1
-    TabContent.Parent = MainFrame
-    local tabPages = {}
-    local tabButtons = {}
-    local function createTab(tabName, order)
-        local page = Instance.new("ScrollingFrame")
-        page.Name = tabName .. "Page"
-        page.Size = UDim2.new(1, 0, 1, 0)
-        page.BackgroundTransparency = 1
-        page.ScrollBarThickness = 3
-        page.ScrollBarImageColor3 = Color3.fromRGB(255, 136, 0)
-        page.Visible = (order == 1)
-        page.Parent = TabContent
-        local layout = Instance.new("UIListLayout")
-        layout.Padding = UDim.new(0, 6)
-        layout.SortOrder = Enum.SortOrder.LayoutOrder
-        layout.Parent = page
-        layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-            page.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + 12)
-        end)
-        local tBtn = Instance.new("TextButton")
-        tBtn.Size = UDim2.new(0, 90, 1, 0)
-        tBtn.Position = UDim2.new(0, (order - 1) * 96, 0, 0)
-        tBtn.BackgroundColor3 = (order == 1) and Color3.fromRGB(255, 136, 0) or Color3.fromRGB(30, 30, 40)
-        tBtn.Text = tabName
-        tBtn.TextColor3 = (order == 1) and Color3.fromRGB(20, 20, 20) or Color3.fromRGB(200, 200, 210)
-        tBtn.Font = Enum.Font.GothamBold
-        tBtn.TextSize = 11
-        tBtn.AutoButtonColor = false
-        tBtn.Parent = TabBar
-        local tbCorner = Instance.new("UICorner")
-        tbCorner.CornerRadius = UDim.new(0, 5)
-        tbCorner.Parent = tBtn
-        tBtn.MouseButton1Click:Connect(function()
-            for name, p in pairs(tabPages) do
-                p.Visible = (name == tabName)
-            end
-            for name, b in pairs(tabButtons) do
-                b.BackgroundColor3 = (name == tabName) and Color3.fromRGB(255, 136, 0) or Color3.fromRGB(30, 30, 40)
-                b.TextColor3 = (name == tabName) and Color3.fromRGB(20, 20, 20) or Color3.fromRGB(200, 200, 210)
-            end
-        end)
-        tabPages[tabName] = page
-        tabButtons[tabName] = tBtn
-        return page
-    end
-    local farmPage = createTab("Farming", 1)
-    local dungeonPage = createTab("Dungeons", 2)
-    local miscPage = createTab("Utilities", 3)
-    -- [FARMING TAB CONTENT]
-    createToggle(farmPage, "Auto Farm (Quái & Boss)", Config.AutoFarm, function(v) Config.AutoFarm = v end)
-    createToggle(farmPage, "Auto Attack (Chém vũ khí 4 tầng)", Config.AutoAttack, function(v) Config.AutoAttack = v end)
-    createToggle(farmPage, "Auto Skills (Xả chiêu Q & E)", Config.AutoSkill, function(v) Config.AutoSkill = v end)
-    createToggle(farmPage, "Kiting Né Đòn (Giữ 24-28 studs)", Config.EnableKiting, function(v) Config.EnableKiting = v end)
-    createToggle(farmPage, "Auto Start (Tự vào trận / Sảnh)", Config.AutoStart, function(v) Config.AutoStart = v end)
-    createToggle(farmPage, "Tốc độ an toàn (WalkSpeed = 20)", Config.CustomWalkSpeed, function(v) Config.CustomWalkSpeed = v end)
-    -- [DUNGEONS TAB CONTENT]
-    dungeonStepper = createStepper(dungeonPage, "Chọn Dungeon Cày:", dungeonList, Config.SelectedDungeon, function(v)
-        Config.SelectedDungeon = v
+    UserInputService.InputChanged:Connect(function(input)
+        if IsDragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            local d = input.Position - DragStart
+            MainFrame.Position = UDim2.new(StartPos.X.Scale, StartPos.X.Offset + d.X,
+                StartPos.Y.Scale, StartPos.Y.Offset + d.Y)
+        end
     end)
-    diffStepper = createStepper(dungeonPage, "Chọn Độ Khó:", diffList, Config.SelectedDifficulty, function(v)
-        Config.SelectedDifficulty = v
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then IsDragging = false end
     end)
-    createToggle(dungeonPage, "Auto Replay (Tự cày lại khi xong)", Config.AutoReplay, function(v) Config.AutoReplay = v end)
-    createToggle(dungeonPage, "Tự về sảnh khi xong trận", Config.AutoBackToLobby, function(v) Config.AutoBackToLobby = v end)
-    -- [UTILITIES TAB CONTENT]
-    createToggle(miscPage, "Auto Mở Rương Khi Dọn Xong", Config.AutoOpenChest, function(v) Config.AutoOpenChest = v end)
-    createToggle(miscPage, "Anti-AFK (Chống văng 20 phút)", Config.AntiAFK, function(v) Config.AntiAFK = v end)
-    createToggle(miscPage, "Tự kết nối lại (Auto Rejoin)", Config.AutoRejoin, function(v) Config.AutoRejoin = v end)
-    print("[ReaperX UI] V45 Initialized Successfully!")
+    ToggleBtn.MouseButton1Click:Connect(function()
+        MainFrame.Visible = not MainFrame.Visible
+    end)
 end
-function UI.UpdateStatus(text)
-    if SubtitleLabel then
-        SubtitleLabel.Text = text
-    end
+
+UI.Initialize = function() buildUI(); print("[UI] OK") end
+UI.Toggle = function() if MainFrame then MainFrame.Visible = not MainFrame.Visible end end
+UI.UpdateStatus = function(name, v)
+    if ToggleButtons[name] and ToggleButtons[name].setValue then ToggleButtons[name].setValue(v) end
 end
-function UI.Update()
+
+local function getStateText()
+    local g = LocalPlayer:FindFirstChild("PlayerGui")
+    if not g then return "?" end
+    if g:FindFirstChild("countDownGui") then return "STARTING" end
+    if g:FindFirstChild("timeLeftGui") then return "IN DUNGEON" end
+    if g:FindFirstChild("completeGui") then return "COMPLETE" end
+    if g:FindFirstChild("failedGui") then return "FAILED" end
+    if g:FindFirstChild("startButton") then return "READY" end
+    return "LOBBY"
+end
+
+UI.Update = function()
+    if not MainFrame or not MainFrame.Visible then return end
     local c = LocalPlayer.Character
-    local h = c and c:FindFirstChildOfClass("Humanoid")
-    local hpText = h and (math.floor(h.Health) .. "/" .. math.floor(h.MaxHealth)) or "N/A"
-    local status = State.CurrentTarget and ("Targeting: " .. State.CurrentTarget.Name) or "Searching..."
-    UI.UpdateStatus(string.format("HP: %s | %s | Kills: %d", hpText, status, State.KillCount))
+    if c then
+        local h = c:FindFirstChildOfClass("Humanoid")
+        if h then
+            if StatusLabels["HP"] then
+                StatusLabels["HP"].Text = math.floor(h.Health) .. "/" .. math.floor(h.MaxHealth)
+            end
+            if StatusLabels["Speed"] then
+                StatusLabels["Speed"].Text = tostring(math.floor(h.WalkSpeed))
+            end
+        end
+    end
+    if StatusLabels["Kills"] then StatusLabels["Kills"].Text = tostring(State.KillCount) end
+    if StatusLabels["Enemies"] then StatusLabels["Enemies"].Text = tostring(AutoTarget.CountEnemies()) end
+    if _G.CurrentTarget and _G.CurrentTarget.Parent then
+        if StatusLabels["Target"] then
+            StatusLabels["Target"].Text = _G.CurrentTarget.Name
+            StatusLabels["Target"].TextColor3 = Color3.fromRGB(255, 200, 0)
+        end
+        if StatusLabels["TargetType"] then
+            StatusLabels["TargetType"].Text = checkTargetType(_G.CurrentTarget)
+        end
+        if StatusLabels["Dist"] and c then
+            local pos = getPos(_G.CurrentTarget)
+            local hrp = c:FindFirstChild("HumanoidRootPart")
+            if pos and hrp then
+                StatusLabels["Dist"].Text = string.format("%.1f", (pos - hrp.Position).Magnitude)
+            end
+        end
+        if StatusLabels["IdealDist"] then
+            StatusLabels["IdealDist"].Text = tostring(Kiting.GetIdealDistance(_G.CurrentTarget))
+        end
+        if StatusLabels["Casting"] then
+            if isEnemyCastingOrAttacking(_G.CurrentTarget) then
+                StatusLabels["Casting"].Text = "YES - RETREAT"
+                StatusLabels["Casting"].TextColor3 = Color3.fromRGB(255, 50, 50)
+            else
+                StatusLabels["Casting"].Text = "no"
+                StatusLabels["Casting"].TextColor3 = Color3.fromRGB(0, 255, 0)
+            end
+        end
+    else
+        if StatusLabels["Target"] then
+            StatusLabels["Target"].Text = "NONE"
+            StatusLabels["Target"].TextColor3 = Color3.fromRGB(255, 0, 0)
+        end
+        if StatusLabels["TargetType"] then StatusLabels["TargetType"].Text = "-" end
+        if StatusLabels["Dist"] then StatusLabels["Dist"].Text = "-" end
+        if StatusLabels["IdealDist"] then StatusLabels["IdealDist"].Text = "-" end
+        if StatusLabels["Casting"] then StatusLabels["Casting"].Text = "-" end
+    end
+    if StatusLabels["State"] then StatusLabels["State"].Text = getStateText() end
 end
+
 -- =====================================================
 -- AUTO TARGET
 -- =====================================================
 local AutoTarget = {}
-local TargetCache = {}
-local LastScanTime = 0
-function AutoTarget.GetEnemies()
-    local enemies = {}
-    local dungeon = workspace:FindFirstChild("dungeon")
-    if dungeon then
-        local folder = dungeon:FindFirstChild("enemies")
-        if folder then
-            for _, e in ipairs(folder:GetChildren()) do
-                if getHP(e) > 0 then table.insert(enemies, e) end
+local ModelCache = {}
+local LastCacheUpdate = 0
+local CacheDirty = true
+
+local ENEMY_FOLDER_KEYWORDS = {
+    "enem", "mob", "monster", "hostile", "creep", "spawn",
+    "unit", "npc_attack", "dungeonmob", "minion", "wave", "spawner"
+}
+
+local ENEMY_NAME_KEYWORDS = {
+    "enemy", "mob", "monster", "boss", "slime", "goblin", "orc",
+    "skeleton", "zombie", "demon", "oni", "guardian", "warrior",
+    "knight", "brute", "golem", "troll", "wraith", "ghost",
+    "spider", "crab", "shark", "serpent", "kraken", "cannon",
+    "turret", "mage", "wizard", "ranger", "bandit", "pirate",
+    "yeti", "wolf", "bear", "ogre", "imp", "fiend", "cultist",
+    "peasant", "soldier", "archer", "assassin", "berserker",
+    "sand", "desert", "lava", "ice", "fire", "water",
+    "dummy", "training", "target", "minion", "summon",
+    "vampire", "werewolf", "giant", "elite", "dragon",
+    "quái", "quai", "thú", "thu", "quỷ", "quy",
+}
+
+local function isFriendlyName(name)
+    local n = name:lower()
+    return n:find("npc") or n:find("friendly")
+        or n:find("vendor") or n:find("shop")
+        or n:find("trainer") or n:find("quest")
+        or n:find("dialog") or n:find("guide")
+end
+
+local function isEnemy(obj)
+    if not obj or not obj:IsA("Model") then return false end
+    if obj == LocalPlayer.Character then return false end
+    if Players:GetPlayerFromCharacter(obj) then return false end
+    local h = obj:FindFirstChildOfClass("Humanoid")
+    if not h or h.Health <= 0 or h.MaxHealth <= 0 then return false end
+    local hasRoot = obj:FindFirstChild("HumanoidRootPart")
+                 or obj:FindFirstChild("UpperTorso") or obj:FindFirstChild("Torso")
+                 or obj:FindFirstChild("Head") or obj.PrimaryPart
+    if not hasRoot then return false end
+    local name = obj.Name
+    if isFriendlyName(name) then return false end
+    if obj:FindFirstChild("enemyNameplate", true) then return true end
+    local ok, tags = pcall(function() return CollectionService:GetTags(obj) end)
+    if ok and tags then
+        for _, tag in pairs(tags) do
+            local tl = tostring(tag):lower()
+            if tl:find("enem") or tl:find("mob") or tl:find("monster")
+               or tl:find("boss") or tl:find("hostile") then return true end
+        end
+    end
+    local ok2, eAttr = pcall(function()
+        return obj:GetAttribute("Enemy") or obj:GetAttribute("IsEnemy")
+            or obj:GetAttribute("enemy") or obj:GetAttribute("isEnemy")
+            or obj:GetAttribute("Monster") or obj:GetAttribute("Hostile")
+    end)
+    if ok2 and eAttr then return true end
+    local n = name:lower()
+    for _, kw in pairs(ENEMY_NAME_KEYWORDS) do
+        if n:find(kw) then return true end
+    end
+    local parent = obj.Parent
+    local depth = 0
+    while parent and parent ~= workspace and depth < 5 do
+        local pname = parent.Name:lower()
+        for _, kw in pairs(ENEMY_FOLDER_KEYWORDS) do
+            if pname:find(kw) then return true end
+        end
+        parent = parent.Parent
+        depth = depth + 1
+    end
+    local otherPlayers = 0
+    for _, plr in pairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and plr.Character then otherPlayers = otherPlayers + 1 end
+    end
+    if otherPlayers == 0 and obj:FindFirstChild("HumanoidRootPart") then return true end
+    return false
+end
+
+local function recursiveCollect(root, list, depth, maxDepth)
+    for _, obj in pairs(root:GetChildren()) do
+        if obj:IsA("Model") then
+            table.insert(list, obj)
+            if depth < maxDepth then recursiveCollect(obj, list, depth + 1, maxDepth) end
+        elseif obj:IsA("Folder") then
+            if depth < maxDepth then recursiveCollect(obj, list, depth + 1, maxDepth) end
+        end
+    end
+end
+
+local function updateModelCache(forceRefresh)
+    if not forceRefresh and not CacheDirty
+       and tick() - LastCacheUpdate < Config.CacheInterval then return end
+    LastCacheUpdate = tick()
+    CacheDirty = false
+    local newCache = {}
+    recursiveCollect(workspace, newCache, 1, Config.MaxScanDepth)
+    ModelCache = newCache
+end
+
+local function scoreEnemy(obj, myPos, isCurrentTarget)
+    local pos = getPos(obj)
+    if not pos then return math.huge end
+    local d = (pos - myPos).Magnitude
+    local hp, maxHp = getHP(obj)
+    local hpRatio = hp / math.max(maxHp, 1)
+    local score = d
+    if hpRatio < 0.15 then score = score * 0.3
+    elseif hpRatio < 0.3 then score = score * 0.5
+    elseif hpRatio < 0.5 then score = score * 0.8 end
+    if BossDetect.IsBoss(obj) then score = score * 0.85 end
+    if isCurrentTarget then score = score * 0.5 end
+    return score
+end
+
+function AutoTarget.GetBestEnemy()
+    local c = LocalPlayer.Character
+    if not c then return nil end
+    local hrp = c:FindFirstChild("HumanoidRootPart")
+    if not hrp then return nil end
+    local myPos = hrp.Position
+    updateModelCache()
+    local best, bestScore = nil, math.huge
+    local rangeSq = Config.FarmRange * Config.FarmRange
+    local cur = _G.CurrentTarget
+    for _, obj in pairs(ModelCache) do
+        if obj.Parent and isEnemy(obj) then
+            local pos = getPos(obj)
+            if pos then
+                local dSq = (pos - myPos).Magnitude ^ 2
+                if dSq <= rangeSq then
+                    local sc = scoreEnemy(obj, myPos, cur == obj)
+                    if sc < bestScore then bestScore = sc; best = obj end
+                end
             end
         end
     end
-    return enemies
-end
-function AutoTarget.GetBestEnemy()
-    local enemies = AutoTarget.GetEnemies()
-    local c = LocalPlayer.Character
-    local hrp = c and c:FindFirstChild("HumanoidRootPart")
-    if not hrp or #enemies == 0 then return nil end
-    local best = nil
-    local bestDist = math.huge
-    for _, e in ipairs(enemies) do
-        local pos = getPos(e)
-        if pos then
-            local dist = (pos - hrp.Position).Magnitude
-            if dist < bestDist and dist <= Config.FarmRange then
-                bestDist = dist
-                best = e
+    if not best then
+        updateModelCache(true)
+        for _, obj in pairs(ModelCache) do
+            if obj.Parent and isEnemy(obj) then
+                local pos = getPos(obj)
+                if pos then
+                    local d = (pos - myPos).Magnitude
+                    if d <= Config.FarmRange then
+                        if not best or d < bestScore then best = obj; bestScore = d end
+                    end
+                end
             end
         end
     end
     return best
 end
-function AutoTarget.ForceRescan()
-    TargetCache = {}
-    LastScanTime = 0
+
+function AutoTarget.CountEnemies()
+    local c = LocalPlayer.Character
+    if not c then return 0 end
+    local hrp = c:FindFirstChild("HumanoidRootPart")
+    if not hrp then return 0 end
+    local myPos = hrp.Position
+    updateModelCache()
+    local count = 0
+    local rangeSq = Config.FarmRange * Config.FarmRange
+    for _, obj in pairs(ModelCache) do
+        if obj.Parent and isEnemy(obj) then
+            local pos = getPos(obj)
+            if pos and (pos - myPos).Magnitude ^ 2 <= rangeSq then count = count + 1 end
+        end
+    end
+    return count
 end
+
+function AutoTarget.ForceRescan()
+    CacheDirty = true
+    updateModelCache(true)
+end
+
+function AutoTarget.DebugListEnemies()
+    updateModelCache(true)
+    print("[V35] === ENEMY DETECTED ===")
+    local count = 0
+    local c = LocalPlayer.Character
+    local myPos = c and c:FindFirstChild("HumanoidRootPart") and c.HumanoidRootPart.Position
+    for _, obj in pairs(ModelCache) do
+        if obj.Parent and isEnemy(obj) then
+            count = count + 1
+            local pos = getPos(obj)
+            local d = (pos and myPos) and (pos - myPos).Magnitude or -1
+            local isBoss = BossDetect.IsBoss(obj)
+            local casting = isEnemyCastingOrAttacking(obj)
+            print(string.format("  [%d] %s [%s] cast:%s - %.1f studs",
+                count, obj.Name, isBoss and "BOSS" or "mob",
+                tostring(casting), d))
+        end
+    end
+    print("[V35] Total: " .. count .. " enemy")
+end
+
+function AutoTarget.DebugAllHumanoids()
+    print("[V35] ═══ TẤT CẢ HUMANOID ═══")
+    local count = 0
+    local c = LocalPlayer.Character
+    local myPos = c and c:FindFirstChild("HumanoidRootPart") and c.HumanoidRootPart.Position
+    for _, obj in pairs(workspace:GetDescendants()) do
+        if obj:IsA("Model") then
+            local h = obj:FindFirstChildOfClass("Humanoid")
+            if h and obj ~= c then
+                local isPlr = Players:GetPlayerFromCharacter(obj)
+                local pos = getPos(obj)
+                local d = (pos and myPos) and (pos - myPos).Magnitude or -1
+                local pass = isEnemy(obj)
+                local isBoss = BossDetect.IsBoss(obj)
+                count = count + 1
+                print(string.format("[%d] %s | Boss:%s | HP:%d/%d | Pass:%s | %.1f",
+                    count, obj.Name, tostring(isBoss),
+                    math.floor(h.Health), math.floor(h.MaxHealth),
+                    tostring(pass), d))
+            end
+        end
+    end
+    print("[V35] Tổng: " .. count .. " Humanoid")
+end
+
+function AutoTarget.FindNearestChest()
+    local c = LocalPlayer.Character
+    if not c then return nil end
+    local hrp = c:FindFirstChild("HumanoidRootPart")
+    if not hrp then return nil end
+    local myPos = hrp.Position
+    local nearest, nearDist = nil, math.huge
+    for _, obj in pairs(workspace:GetDescendants()) do
+        if obj:IsA("Model") or obj:IsA("BasePart") then
+            local isChest = obj.Name:lower():find("chest") or obj.Name:lower():find("reward")
+            if isChest then
+                local prompt = obj:FindFirstChildOfClass("ProximityPrompt", true)
+                if prompt then
+                    local pos = obj:IsA("BasePart") and obj.Position or getPos(obj)
+                    if pos then
+                        local d = (pos - myPos).Magnitude
+                        if d < nearDist and d <= 100 then nearDist = d; nearest = obj end
+                    end
+                end
+            end
+        end
+    end
+    return nearest
+end
+
+function AutoTarget.FindNearestPortal()
+    local c = LocalPlayer.Character
+    if not c then return nil end
+    local hrp = c:FindFirstChild("HumanoidRootPart")
+    if not hrp then return nil end
+    local myPos = hrp.Position
+    local nearest, nearDist = nil, math.huge
+    for _, obj in pairs(workspace:GetDescendants()) do
+        if obj:IsA("BasePart") or obj:IsA("Model") then
+            local name = obj.Name:lower()
+            local isPortal = name:find("portal") or name:find("door") or name:find("exit") or name:find("next")
+            if isPortal then
+                local pos = obj:IsA("BasePart") and obj.Position or getPos(obj)
+                if pos then
+                    local d = (pos - myPos).Magnitude
+                    if d < nearDist and d <= 300 then nearDist = d; nearest = obj end
+                end
+            end
+        end
+    end
+    return nearest
+end
+
+AutoTarget.Initialize = function()
+    ModelCache = {}
+    LastCacheUpdate = 0
+    CacheDirty = true
+    print("[AutoTarget] OK (V35)")
+end
+
 -- =====================================================
--- AUTO FARM V45 (4-LAYER COMBAT & KITING ENGINE)
+-- AUTO FARM V35
 -- =====================================================
 local AutoFarm = {}
 local CurrentTarget = nil
-local LastMoveAction = 0
 local LastTargetSearch = 0
 local LastWeaponAttack = 0
+local LastMoveAction = 0
+
 function AutoFarm.Update(dt)
     if not Config.AutoFarm then return end
     local c = LocalPlayer.Character
     if not c then return end
-    local hrp = c:FindFirstChild("HumanoidRootPart")
     local h = c:FindFirstChildOfClass("Humanoid")
-    if not hrp or not h or h.Health <= 0 then return end
-    -- Check xem phó bản đã hoàn thành để Replay chưa
-    local dungeon = workspace:FindFirstChild("dungeon")
-    local bossRoom = dungeon and dungeon:FindFirstChild("bossRoom")
-    local dungeonFinished = bossRoom and bossRoom:FindFirstChild("dungeonFinished")
-    if dungeonFinished and dungeonFinished.Value == true then
-        triggerReplayOrLobby()
-        return
+    if not h or h.Health <= 0 then return end
+    local hrp = c:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+
+    Smooth.DisableAutoRotate(h)
+
+    if Config.EnableAirControl and State.IsJumping then
+        local targetPos = CurrentTarget and getPos(CurrentTarget)
+        if targetPos then Pathfinding.AirControl(hrp, targetPos) end
+        if h.FloorMaterial ~= Enum.Material.Air then State.IsJumping = false end
     end
+
+    if State.StuckTime > Config.StuckDropTargetTime then
+        CurrentTarget = nil; _G.CurrentTarget = nil
+        State.StuckTime = 0
+        Pathfinding.Reset()
+    end
+
+    if State.StuckTime > 3 and tick() - LastTargetSearch > 2 then
+        AutoTarget.ForceRescan()
+        State.StuckTime = 0
+        LastTargetSearch = tick() - Config.TargetSearchInterval
+    end
+
     if tick() - LastTargetSearch > Config.TargetSearchInterval then
-        LastTargetSearch = tick()
-        if not CurrentTarget or not CurrentTarget.Parent or getHP(CurrentTarget) <= 0 then
-            if CurrentTarget and getHP(CurrentTarget) <= 0 then
+        if CurrentTarget then
+            local hp = getHP(CurrentTarget)
+            if not CurrentTarget.Parent or hp <= 0 then
+                CurrentTarget = nil; _G.CurrentTarget = nil
                 State.KillCount = State.KillCount + 1
+                Pathfinding.Stop()
+                Obstacle.ClearWaypoints()
+                Kiting.Reset()
             end
+        end
+
+        if not CurrentTarget then
             CurrentTarget = AutoTarget.GetBestEnemy()
             _G.CurrentTarget = CurrentTarget
-            Pathfinding.Reset()
-            Kiting.Reset()
+            if CurrentTarget then
+                Obstacle.ClearWaypoints()
+                Kiting.Reset()
+                Pathfinding.Reset()
+            else
+                if Config.AutoOpenChest then
+                    local chest = AutoTarget.FindNearestChest()
+                    if chest then
+                        local pos = chest:IsA("BasePart") and chest.Position or getPos(chest)
+                        if pos then
+                            local d = (pos - hrp.Position).Magnitude
+                            if d <= 10 then
+                                local prompt = chest:FindFirstChildOfClass("ProximityPrompt", true)
+                                if prompt then
+                                    pcall(function()
+                                        prompt:InputHoldBegin()
+                                        task.wait(prompt.HoldDuration or 0.5)
+                                        prompt:InputHoldEnd()
+                                    end)
+                                end
+                            elseif d <= 150 then
+                                Pathfinding.MoveTo(pos, dt, pos)
+                            end
+                        end
+                    end
+                end
+                if Config.AutoClearRoom then
+                    local portal = AutoTarget.FindNearestPortal()
+                    if portal then
+                        local pos = portal:IsA("BasePart") and portal.Position or getPos(portal)
+                        if pos then
+                            local d = (pos - hrp.Position).Magnitude
+                            if d <= 5 then
+                                h:MoveTo(hrp.Position)
+                            elseif d <= 250 then
+                                Pathfinding.MoveTo(pos, dt, pos)
+                            end
+                        end
+                    end
+                end
+            end
         end
+        LastTargetSearch = tick()
     end
+
     if CurrentTarget and CurrentTarget.Parent then
         local pos = getPos(CurrentTarget)
         if pos then
             local d = (pos - hrp.Position).Magnitude
             local facePos = Vector3.new(pos.X, hrp.Position.Y, pos.Z)
-            -- =============================================
-            -- HÀM TRYATTACK V45: HỆ THỐNG 4 TẦNG ĐÁNH VŨ KHÍ
-            -- =============================================
+
             local function tryAttack(rangeBonus)
                 rangeBonus = rangeBonus or 0
-                if not Config.AutoAttack then return end
-                if d > (Config.AttackRange + rangeBonus) then return end
-                if tick() - LastWeaponAttack < Config.AttackCooldown then return end
-                local attacked = false
-                -- Không đánh nếu đang cast chiêu hoặc trong sảnh an toàn
-                local bc = c:FindFirstChild("busyCasting")
-                if bc and bc.Value == true then return end
-                local peaceful = LocalPlayer:FindFirstChild("peaceful")
-                if peaceful and peaceful.Value == true then return end
-                -- [Tầng 1]: Native Dungeon Quest Weapon trong Accessory
-                for _, acc in ipairs(c:GetChildren()) do
-                    if acc:IsA("Accessory") and acc:FindFirstChild("Weapon") then
-                        local weaponRemote = acc:FindFirstChildOfClass("RemoteEvent")
-                        if weaponRemote then
-                            pcall(function() weaponRemote:FireServer() end)
-                            attacked = true
-                        end
+                if d <= Config.AttackRange + rangeBonus and Config.AutoAttack
+                   and tick() - LastWeaponAttack >= Config.AttackCooldown then
+                    local tool = c:FindFirstChildOfClass("Tool")
+                    if tool then
+                        pcall(function() tool:Activate() end)
+                        LastWeaponAttack = tick()
                     end
-                end
-                -- [Tầng 2]: Remote weaponUsed của Dungeon Quest
-                local remotes = ReplicatedStorage:FindFirstChild("remotes")
-                if remotes and remotes:FindFirstChild("weaponUsed") then
-                    pcall(function() remotes.weaponUsed:FireServer() end)
-                    attacked = true
-                end
-                -- [Tầng 3]: Tool Weapon Equip & Activate Fallback
-                local tool = c:FindFirstChildOfClass("Tool")
-                if not tool then
-                    local bp = LocalPlayer:FindFirstChild("Backpack")
-                    if bp then
-                        for _, t in ipairs(bp:GetChildren()) do
-                            if t:IsA("Tool") and not t:FindFirstChild("abilitySlot") then
-                                pcall(function() h:EquipTool(t) end)
-                                tool = t
-                                break
-                            end
-                        end
-                    end
-                end
-                if tool then
-                    pcall(function() tool:Activate() end)
-                    attacked = true
-                end
-                -- [Tầng 4]: VirtualUser Click chuột trái (Trực tiếp kích hoạt UIS.lua của game)
-                pcall(function()
-                    VirtualUser:Button1Down(Vector2.new(500, 500), workspace.CurrentCamera.CFrame)
-                    VirtualUser:Button1Up(Vector2.new(500, 500), workspace.CurrentCamera.CFrame)
-                    attacked = true
-                end)
-                if attacked then
-                    LastWeaponAttack = tick()
                 end
             end
-            -- KITING VÀ ĐÁNH LIÊN TỤC TRONG MỌI HÀNH ĐỘNG
+
+            -- Kiting xử lý CẢ boss và quái như nhau
             if Config.EnableKiting then
                 local kitePos, kiteAction = Kiting.GetKitePosition(hrp, pos, CurrentTarget, dt)
+
                 if kiteAction == "retreat" and kitePos then
                     Pathfinding.MoveTo(kitePos, dt, facePos)
-                    tryAttack(6)
+                    tryAttack(5)
                 elseif kiteAction == "circle" and kitePos then
                     if tick() - LastMoveAction > Config.MoveDelay then
                         LastMoveAction = tick()
                         Pathfinding.MoveTo(kitePos, dt, facePos)
                     end
-                    tryAttack(10)
+                    tryAttack(8)
                 elseif kiteAction == "attack" then
                     Pathfinding.StopAndFace(facePos)
-                    tryAttack(4)
+                    tryAttack(0)
                 elseif kiteAction == "hold" then
                     Pathfinding.StopAndFace(facePos)
-                    tryAttack(4)
+                    tryAttack(0)
                 elseif kiteAction == "approach" then
                     if tick() - LastMoveAction > Config.MoveDelay then
                         LastMoveAction = tick()
                         local predictTarget = pos
                         if Config.PredictMovement then
-                            local vel = CurrentTarget:FindFirstChild("HumanoidRootPart") and CurrentTarget.HumanoidRootPart.Velocity or Vector3.zero
+                            local vel = getVelocity(CurrentTarget)
                             if vel.Magnitude > 1 then
                                 local timeToReach = math.min(d / math.max(h.WalkSpeed, 16), 1.0)
                                 predictTarget = pos + vel * timeToReach * 0.7
@@ -1192,81 +1606,132 @@ function AutoFarm.Update(dt)
                         end
                         Pathfinding.MoveTo(predictTarget, dt, facePos)
                     end
-                    tryAttack(4)
+                    tryAttack(0)
                 end
             else
                 if d <= Config.AttackRange then
                     Pathfinding.StopAndFace(facePos)
-                    tryAttack(4)
+                    tryAttack(0)
                 else
                     if tick() - LastMoveAction > Config.MoveDelay then
                         LastMoveAction = tick()
                         Pathfinding.MoveTo(pos, dt, facePos)
                     end
-                    tryAttack(4)
                 end
             end
         end
     end
 end
--- =====================================================
--- CHARACTER RESPAWN HOOK & ANTI-AFK
--- =====================================================
-local function onCharacterAdded(char)
-    task.wait(1.0)
-    Pathfinding.Reset()
-    Kiting.Reset()
-    Smooth.ClearGyro()
+
+AutoFarm.Initialize = function()
     CurrentTarget = nil
     _G.CurrentTarget = nil
+    LastTargetSearch = 0
+    LastWeaponAttack = 0
+    LastMoveAction = 0
+    print("[AutoFarm] OK (V35)")
 end
+
+-- =====================================================
+-- CHARACTER RESPAWN HOOK
+-- =====================================================
+local function onCharacterAdded(char)
+    local hrp = char:WaitForChild("HumanoidRootPart", 5)
+    if hrp then
+        local old = hrp:FindFirstChild("AutoFarmGyro")
+        if old then old:Destroy() end
+    end
+end
+
+if LocalPlayer.Character then onCharacterAdded(LocalPlayer.Character) end
 LocalPlayer.CharacterAdded:Connect(onCharacterAdded)
--- Chống AFK 20 phút của Roblox
-LocalPlayer.Idled:Connect(function()
-    if Config.AntiAFK then
-        VirtualUser:Button2Down(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
-        task.wait(1)
-        VirtualUser:Button2Up(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
-    end
-end)
+
 -- =====================================================
--- MAIN INITIALIZE & RUN
+-- MAIN
 -- =====================================================
-local function onInputBegan(input, gameProcessed)
-    if gameProcessed then return end
-    if input.KeyCode == Config.KeyToggle then
-        if MainFrame then
-            setUIVisible(not MainFrame.Visible)
-        end
-    elseif input.KeyCode == Config.KeyFarm then
-        Config.AutoFarm = not Config.AutoFarm
-    elseif input.KeyCode == Config.KeySkill then
-        Config.AutoSkill = not Config.AutoSkill
-    end
-end
 local function initialize()
-    print("[V45] Initializing ReaperX DQ AutoFarm...")
-    pcall(UI.Initialize)
+    print("[V35] Khởi tạo...")
+    UI.Initialize()
+    Pathfinding.Initialize()
+    Obstacle.Initialize()
+    Kiting.Initialize()
+    AutoTarget.Initialize()
+    AutoStart.Initialize()
+    WalkSpeed.Initialize()
+    AutoFarm.Initialize()
     AutoSkill.Initialize()
-    setUIVisible(true)
-    print("[V45] Ready to Farm!")
+    print("[V35] Khởi tạo xong!")
 end
+
+local function onInputBegan(input, gpe)
+    if gpe then return end
+    local k = input.KeyCode
+    if k == Config.KeyToggle then UI.Toggle(); return end
+    if k == Config.KeyFarm then
+        Config.AutoFarm = not Config.AutoFarm
+        UI.UpdateStatus("AutoFarm", Config.AutoFarm); return
+    end
+    if k == Config.KeyDebugAll then AutoTarget.DebugAllHumanoids(); return end
+    if k == Config.KeySkill then
+        Config.AutoSkill = not Config.AutoSkill
+        UI.UpdateStatus("AutoSkill", Config.AutoSkill); return
+    end
+    if k == Config.KeyAutoStart then
+        Config.AutoStart = not Config.AutoStart
+        UI.UpdateStatus("AutoStart", Config.AutoStart); return
+    end
+    if k == Config.KeyToggleKiting then
+        Config.EnableKiting = not Config.EnableKiting
+        UI.UpdateStatus("EnableKiting", Config.EnableKiting); return
+    end
+    if k == Config.KeySpeedUp then
+        local c = LocalPlayer.Character
+        local h = c and c:FindFirstChildOfClass("Humanoid")
+        if h then h.WalkSpeed = math.min(h.WalkSpeed + 2, 50) end
+        return
+    end
+    if k == Config.KeySpeedDown then
+        local c = LocalPlayer.Character
+        local h = c and c:FindFirstChildOfClass("Humanoid")
+        if h then h.WalkSpeed = math.max(h.WalkSpeed - 2, 16) end
+        return
+    end
+    if k == Config.KeyDebug then AutoTarget.DebugListEnemies(); return end
+    if k == Config.KeyToggleVisualize then Visualize.Toggle(); return end
+    if k == Config.KeyPanic then
+        State.Running = false
+        Config.AutoFarm = false; Config.AutoSkill = false
+        Config.AutoStart = false; Config.AutoAttack = false
+        for _, d in pairs(ToggleButtons) do
+            if d.setValue then d.setValue(false) end
+        end
+        Pathfinding.Stop()
+        print("[V35] PANIC!")
+    end
+end
+
 local function mainLoop()
     State.Running = true
+    print("[V35] Main loop!")
     while State.Running do
         local dt = RunService.Heartbeat:Wait()
         if Config.AutoStart then pcall(AutoStart.Update, dt) end
         if Config.CustomWalkSpeed then pcall(WalkSpeed.Update, dt) end
         if Config.AutoFarm then pcall(AutoFarm.Update, dt) end
         if Config.AutoSkill then pcall(AutoSkill.Update, dt) end
+        if VisualizeEnabled then pcall(Visualize.Update) end
         pcall(UI.Update)
     end
 end
+
 initialize()
 UserInputService.InputBegan:Connect(onInputBegan)
 task.spawn(mainLoop)
+
 print("╔════════════════════════════════════════╗")
-print("║  REAPERX AUTO FARM V45 - PERFECT       ║")
-print("║  ĐÃ FIX FULL ATTACK + SKILLS Q & E     ║")
-print("║  F1: Ẩn/Hiện Menu                      ║")
+print("║  AUTO FARM V35 - BOSS KITING           ║")
+print("║  Boss = quái thường, không tele        ║")
+print("║  F1:UI | F2:Farm | F4:ScanAll | F6:Skill║")
+print("║  F9:Kiting | F10:Start | F11:Visual    ║")
+print("║  F12:Enemies | RShift: PANIC           ║")
 print("╚════════════════════════════════════════╝")
