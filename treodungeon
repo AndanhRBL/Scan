@@ -1,43 +1,3 @@
-Viewed media_1789391145874.png:1-800
-Viewed DQ_REAPERX_V43_PERFECT.lua:1210-1245
-Viewed DQ_REAPERX_V43_PERFECT.lua:1190-1235
-Viewed DQ_REAPERX_V43_PERFECT.lua:1415-1475
-Created apply_v44_features.py
-Ran command: `python "C:\Users\Pham Bao\.gemini\antigravity\brain\7cd7fbec-4af2-45b0-a7b2-b3227069f37d\scratch\apply_v44_features.py"`
-Ran command: `python "C:\Users\Pham Bao\.gemini\antigravity\brain\7cd7fbec-4af2-45b0-a7b2-b3227069f37d\scratch\check_lua.py"`
-Ran command: `Copy-Item "C:\Users\Pham Bao\.gemini\antigravity\brain\7cd7fbec-4af2-45b0-a7b2-b3227069f37d\scratch\DQ_REAPERX_V43_PERFECT.lua" "f:\workspace\DQ_REAPERX_V43_PERFECT.lua" -Force`
-Ran command: `python -c "
-with open(r'f:\workspace\DQ_REAPERX_V43_PERFECT.lua', 'r', encoding='utf-8') as f:
-    lines = f.readlines()
-print('Total lines in workspace file:', len(lines))
-"`
-
-Mình đã hiểu chính xác 2 điểm bạn cần từ ảnh chụp màn hình máy tính rồi nha:
-
-1. **Thêm nút `—` thu nhỏ thành một khối tròn nhỏ (Floating Circle `🗡️`)**:
-   - Ở góc trên bên phải thanh Header, bên cạnh nút `✕` đã có thêm nút `—` (Thu nhỏ).
-   - Khi bạn bấm `—` (hoặc `✕`), toàn bộ bảng menu to sẽ thu gọn lại thành một **khối tròn nhỏ gọn `🗡️`** với viền đỏ sang trọng ở mép màn hình.
-   - Khối tròn này **có thể kéo thả (drag)** đến bất kỳ góc nào trên màn hình để hoàn toàn không che tầm nhìn của bạn khi ngắm acc cày.
-   - Chỉ cần **bấm vào khối tròn** là menu to sẽ mở lại ngay lập tức! (Ngoài ra bạn cũng có thể bấm phím `RightShift` hoặc `Insert` để ẩn/hiện menu siêu nhanh).
-
-2. **Bộ chọn Map & Độ khó trực quan (Nút mũi tên `◀` và `▶`)**:
-   - Khắc phục tình trạng ở ảnh cũ bạn chụp (trước đó chỉ có 1 dòng chữ đỏ tĩnh).
-   - Bản mới đã tích hợp 2 thanh chọn chuyên nghiệp:
-     * **`Chọn Map: [ ◀ ]   Northern Lands   [ ▶ ]`**: Bấm `◀` hoặc `▶` để chuyển đổi qua lại giữa tất cả 11 map (*Desert Temple ➔ Winter Outpost ➔ Pirate Island ➔ King's Castle ➔ The Underworld ➔ Samurai Palace ➔ The Canals ➔ Ghastly Harbor ➔ Steampunk Sewers ➔ Orbital Outpost ➔ Northern Lands*).
-     * **`Độ khó: [ ◀ ]   Nightmare   [ ▶ ]`**: Bấm để đổi qua các mức *Easy, Medium, Hard, Insane, Nightmare*.
-   - Có dòng trạng thái phát sáng thông báo rõ ràng:
-     * Khi bật `Auto Select Best Dungeon`: `⭐ Tự chọn theo Level: [Tên Map]` (màu xanh lá ngọc).
-     * Khi bấm chọn map thủ công: `📌 Khóa cố định: [Tên Map]` (màu vàng cam) để treo xuyên suốt đúng map đó 24/24!
-
----
-
-> [!NOTE]
-> File đã được tự động cập nhật sẵn tại:  
-> [DQ_REAPERX_V43_PERFECT.lua](file:///f:/workspace/DQ_REAPERX_V43_PERFECT.lua)
-
-Dưới đây là **TOÀN BỘ BẢN CODE MỚI ĐẦY ĐỦ** để bạn copy vào Solara:
-
-```lua
 -- ====================================================================
 -- DUNGEON QUEST: REAPERX V43 MASTER (KẾ THỪA V35 + REAPERX UI + DUAL DODGE)
 -- Tối ưu 24/24 cho SOLARA trên LAPTOP: Auto Start 100%, Auto Replay, Kiting chuẩn
@@ -1261,4 +1221,3 @@ end
 
 task.spawn(mainLoop)
 print("[ReaperX V43] Sẵn sàng hoạt động!")
-```
